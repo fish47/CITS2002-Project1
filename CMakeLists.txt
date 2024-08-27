@@ -16,25 +16,28 @@ pkg_check_modules(_pkg_cppunit
 
 set(runml_src_test
     test/main.cc
+    test/test_token.cc
 )
 
-# set(runml_src_lib
-# )
+set(runml_src_lib
+    src/ml_token.h
+    src/ml_token.c
+)
 
 set(runml_src_main
     src/main.c
 )
 
-# add_library(runml_lib SHARED
-#     ${runml_src_lib}
-# )
+add_library(runml_lib SHARED
+    ${runml_src_lib}
+)
 
 add_executable(runml_main
     ${runml_src_main}
 )
 
 target_link_libraries(runml_main
-    # PRIVATE runml_lib
+    PRIVATE runml_lib
 )
 
 add_executable(runml_test
@@ -46,7 +49,7 @@ target_include_directories(runml_test
 )
 
 target_link_libraries(runml_test
-    # PRIVATE runml_lib
+    PRIVATE runml_lib
     PkgConfig::_pkg_cppunit
 )
 
