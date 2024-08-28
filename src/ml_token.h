@@ -12,6 +12,7 @@ struct ml_token_io_fns {
 enum ml_token_type {
     ML_TOKEN_TYPE_EOF,
     ML_TOKEN_TYPE_ERROR,
+    ML_TOKEN_TYPE_NUMBER,
     ML_TOKEN_TYPE_COMMENT,
     ML_TOKEN_TYPE_SPACE,
     ML_TOKEN_TYPE_TAB,

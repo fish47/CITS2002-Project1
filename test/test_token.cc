@@ -25,6 +25,20 @@ private:
 private:
     static const ml_token_io_fns string_io_fns;
 
+private:
+    template <typename F>
+    bool doCheck(F func) {
+        while (true) {
+            const char *token = nullptr;
+            auto type = ml_token_iterate(ctx, &token, nullptr);
+            if (!func(type, token))
+                return false;
+            if (type == ML_TOKEN_TYPE_EOF)
+                break;
+        }
+        return true;
+    }
+
 public:
     Tokenizer(const char *s, int token_capacity = 64) {
         text = s;
@@ -42,18 +56,16 @@ public:
 
     bool check(std::initializer_list<std::string> tokens) {
         auto it = tokens.begin();
-        while (true) {
-            const char *word = nullptr;
-            auto type = ml_token_iterate(ctx, &word, nullptr);
-            if (type == ML_TOKEN_TYPE_EOF)
-                break;
+        return doCheck([&it, &tokens](enum ml_token_type type, const char *token) {
+            return it == tokens.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == token);
+        });
+    }
 
-            if (it == tokens.end() || *it != word)
-                return false;
-
-            ++it;
-        }
-        return it == tokens.end();
+    bool check(std::initializer_list<enum ml_token_type> types) {
+        auto it = types.begin();
+        return doCheck([&it, &types](enum ml_token_type type, const char *token) {
+            return it == types.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == type);
+        });
     }
 };
 
@@ -94,13 +106,12 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
     CPPUNIT_TEST(testMergedSpace);
     CPPUNIT_TEST(testSpecialCharacter);
     CPPUNIT_TEST(testComment);
+    CPPUNIT_TEST(testNumber);
     CPPUNIT_TEST_SUITE_END();
 
 public:
     void testTypes() {
-        using TokenTypes = std::vector<ml_token_type>;
-
-        const TokenTypes expected {
+        CPPUNIT_ASSERT(Tokenizer(" \t+-*/()1.1#\n").check({
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_TAB,
             ML_TOKEN_TYPE_PLUS,
@@ -109,20 +120,10 @@ public:
             ML_TOKEN_TYPE_DIVIDE,
             ML_TOKEN_TYPE_PARENTHESIS_L,
             ML_TOKEN_TYPE_PARENTHESIS_R,
+            ML_TOKEN_TYPE_NUMBER,
             ML_TOKEN_TYPE_COMMENT,
             ML_TOKEN_TYPE_LINE_TERMINATOR,
-        };
-
-        Tokenizer t(" \t+-*/()#\n");
-        TokenTypes types;
-        while (true) {
-            auto type = ml_token_iterate(t.cast(), nullptr, nullptr);
-            if (type == ML_TOKEN_TYPE_EOF)
-                break;
-            types.push_back(type);
-        }
-
-        CPPUNIT_ASSERT(types == expected);
+        }));
     }
 
     void testLineTerminator() {
@@ -145,6 +146,32 @@ public:
         CPPUNIT_ASSERT(Tokenizer("#  + -").check({"#"}));
         CPPUNIT_ASSERT(Tokenizer("# :-o ##\r\n#").check({"#", "\r\n", "#"}));
         CPPUNIT_ASSERT(Tokenizer("+-*  # :-)\n/").check({"+", "-", "*", " ", "#", "\n", "/"}));
+    }
+
+    void testNumber() {
+        CPPUNIT_ASSERT(Tokenizer("1234567890").check({"1234567890"}));
+        CPPUNIT_ASSERT(Tokenizer("  1234").check({" ", "1234"}));
+        CPPUNIT_ASSERT(Tokenizer("  1234.5\n").check({" ", "1234.5", "\n"}));
+        CPPUNIT_ASSERT(Tokenizer("1234.").check({"1234."}));
+        CPPUNIT_ASSERT(Tokenizer(".1").check({".1"}));
+        CPPUNIT_ASSERT(Tokenizer("0.1").check({"0.1"}));
+
+        CPPUNIT_ASSERT(Tokenizer(" \n . haha").check({
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_LINE_TERMINATOR,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ERROR,
+        }));
+        CPPUNIT_ASSERT(Tokenizer("  .1.#.").check({
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ERROR,
+        }));
+        CPPUNIT_ASSERT(Tokenizer("  .1_ haha\n123").check({
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ERROR,
+            ML_TOKEN_TYPE_LINE_TERMINATOR,
+            ML_TOKEN_TYPE_NUMBER,
+        }));
     }
 };
 
