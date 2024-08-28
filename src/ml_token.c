@@ -1,10 +1,15 @@
 #include "ml_token.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 #define DEFAULT_READ_BUFFER_SIZE    1024
 #define DEFAULT_TOKEN_BUFFER_SIZE   64
+
+#define ML_KEYWORD_PRINT        "print"
+#define ML_KEYWORD_RETURN       "return"
+#define ML_KEYWORD_FUNCTION     "function"
 
 static int io_cb_read(void *opaque, char *buffer, int capacity);
 static void io_cb_close(void *opaque);
@@ -16,6 +21,7 @@ enum token_flag {
     TOKEN_FLAG_SPACE = 1 << 2,
     TOKEN_FLAG_DOT = 1 << 3,
     TOKEN_FLAG_NUMBER = 1 << 4,
+    TOKEN_FLAG_ALPHABET = 1 << 5,
 
     // control flags
     TOKEN_FLAG_SKIP_LINE = 1 << 10,
@@ -133,6 +139,21 @@ static enum ml_token_type raise_error(struct ml_token_ctx *ctx) {
     return ML_TOKEN_TYPE_ERROR;
 }
 
+static bool is_keyword_matched(struct ml_token_ctx *ctx, size_t n, const char *str) {
+    return ctx->token_idx == n && strncmp(ctx->token_buffer, str, n) == 0;
+}
+
+static enum ml_token_type resolve_name_token(struct ml_token_ctx *ctx) {
+    if (is_keyword_matched(ctx, sizeof(ML_KEYWORD_PRINT) - 1, ML_KEYWORD_PRINT))
+        return ML_TOKEN_TYPE_PRINT;
+    else if (is_keyword_matched(ctx, sizeof(ML_KEYWORD_RETURN) - 1, ML_KEYWORD_RETURN))
+        return ML_TOKEN_TYPE_RETURN;
+    else if (is_keyword_matched(ctx, sizeof(ML_KEYWORD_FUNCTION) - 1, ML_KEYWORD_FUNCTION))
+        return ML_TOKEN_TYPE_FUNCTION;
+    else
+        return ML_TOKEN_TYPE_NAME;
+}
+
 static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
                                        const char **buf, int *len,
                                        enum ml_token_type *hint) {
@@ -143,6 +164,8 @@ static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
         found = ML_TOKEN_TYPE_SPACE;
     else if (ctx->token_flags & TOKEN_FLAG_NUMBER)
         found = ML_TOKEN_TYPE_NUMBER;
+    else if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
+        found = resolve_name_token(ctx);
 
     if (found == ML_TOKEN_TYPE_ERROR)
         return raise_error(ctx);
@@ -247,12 +270,18 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
                     ctx->token_flags |= TOKEN_FLAG_SPACE;
                 }
             } else if ('0' <= c && c <= '9') {
+                if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
+                    return raise_error(ctx);
+
                 if (!check_pending_token(ctx, (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT)))
                     return finish_token(ctx, buf, len, NULL);
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_NUMBER;
             } else if (c == '.') {
+                if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
+                    return raise_error(ctx);
+
                 if (!check_pending_token(ctx, (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT)))
                     return finish_token(ctx, buf, len, NULL);
 
@@ -262,6 +291,16 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_DOT;
+            } else if ('a' <= c && c <= 'z') {
+                // identifiers only consist of alphabets
+                if (ctx->token_flags & (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT))
+                    return raise_error(ctx);
+
+                if (!check_pending_token(ctx, TOKEN_FLAG_ALPHABET))
+                    return finish_token(ctx, buf, len, NULL);
+
+                expand_token(ctx);
+                ctx->token_flags |= TOKEN_FLAG_ALPHABET;
             } else if (c == '\t') {
                 return flush_token(ctx, buf, len, ML_TOKEN_TYPE_TAB);
             } else if (c == '+') {

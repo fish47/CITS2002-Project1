@@ -107,7 +107,13 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
     CPPUNIT_TEST(testSpecialCharacter);
     CPPUNIT_TEST(testComment);
     CPPUNIT_TEST(testNumber);
+    CPPUNIT_TEST(testIdentifier);
     CPPUNIT_TEST_SUITE_END();
+
+private:
+    static bool isInvalidToken(const char *str) {
+        return Tokenizer(str).check({ML_TOKEN_TYPE_ERROR});
+    }
 
 public:
     void testTypes() {
@@ -123,6 +129,16 @@ public:
             ML_TOKEN_TYPE_NUMBER,
             ML_TOKEN_TYPE_COMMENT,
             ML_TOKEN_TYPE_LINE_TERMINATOR,
+        }));
+
+        CPPUNIT_ASSERT(Tokenizer("abc print return function").check({
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_PRINT,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_RETURN,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_FUNCTION,
         }));
     }
 
@@ -156,6 +172,12 @@ public:
         CPPUNIT_ASSERT(Tokenizer(".1").check({".1"}));
         CPPUNIT_ASSERT(Tokenizer("0.1").check({"0.1"}));
 
+        CPPUNIT_ASSERT(Tokenizer(" + 1a").check({
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_PLUS,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ERROR,
+        }));
         CPPUNIT_ASSERT(Tokenizer(" \n . haha").check({
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_LINE_TERMINATOR,
@@ -172,6 +194,24 @@ public:
             ML_TOKEN_TYPE_LINE_TERMINATOR,
             ML_TOKEN_TYPE_NUMBER,
         }));
+    }
+
+    void testIdentifier() {
+        CPPUNIT_ASSERT(Tokenizer("print(").check({"print", "("}));
+        CPPUNIT_ASSERT(Tokenizer("  abc#").check({" ", "abc", "#"}));
+        CPPUNIT_ASSERT(Tokenizer("+abc  (fg/bg").check({"+", "abc", " ", "(", "fg", "/", "bg"}));;
+        CPPUNIT_ASSERT(Tokenizer("printf returnx functionx").check({
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_NAME,
+        }));
+
+        CPPUNIT_ASSERT(isInvalidToken("abc1"));
+        CPPUNIT_ASSERT(isInvalidToken("1abc"));
+        CPPUNIT_ASSERT(isInvalidToken("a."));
+        CPPUNIT_ASSERT(isInvalidToken(".b"));
     }
 };
 
