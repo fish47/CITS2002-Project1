@@ -12,6 +12,7 @@ static void io_cb_close(void *opaque);
 enum token_flag {
     TOKEN_FLAG_CR = 1,
     TOKEN_FLAG_LF = 1 << 1,
+    TOKEN_FLAG_SPACE = 1 << 2,
 };
 
 struct ml_token_ctx {
@@ -118,6 +119,8 @@ static enum ml_token_type finish_token(struct ml_token_ctx *ctx, const char **bu
     enum ml_token_type found = ML_TOKEN_TYPE_ERROR;
     if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF))
         found = ML_TOKEN_TYPE_LINE_TERMINATOR;
+    else if (ctx->token_flags & TOKEN_FLAG_SPACE)
+        found = ML_TOKEN_TYPE_SPACE;
 
     if (found != ML_TOKEN_TYPE_ERROR)
         ctx->token_buffer[ctx->token_idx] = 0;
@@ -191,6 +194,17 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
                 ctx->token_flags |= TOKEN_FLAG_LF;
                 expand_token(ctx);
                 return finish_token(ctx, buf, len);
+            } else if (c == ' ') {
+                if (!check_pending_token(ctx, TOKEN_FLAG_SPACE))
+                    return finish_token(ctx, buf, len);
+
+                // merge successive spaces into one
+                if (ctx->token_idx) {
+                    ctx->read_idx++;
+                } else {
+                    expand_token(ctx);
+                    ctx->token_flags |= TOKEN_FLAG_SPACE;
+                }
             } else {
                 if (ctx->token_idx)
                     return finish_token(ctx, buf, len);

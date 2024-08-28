@@ -89,6 +89,7 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
 
     CPPUNIT_TEST_SUITE(TestTokenAnalyze);
     CPPUNIT_TEST(testLineTerminator);
+    CPPUNIT_TEST(testMergedSpace);
     CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -96,6 +97,11 @@ public:
         CPPUNIT_ASSERT(Tokenizer("\r\r\r").check({"\r", "\r", "\r"}));
         CPPUNIT_ASSERT(Tokenizer("\n\n\n").check({"\n", "\n", "\n"}));
         CPPUNIT_ASSERT(Tokenizer("\r\n").check({"\r\n"}));
+    }
+
+    void testMergedSpace() {
+        CPPUNIT_ASSERT(Tokenizer("  \n    \n ").check({" ", "\n", " ", "\n", " "}));
+        CPPUNIT_ASSERT(Tokenizer(" \n\n\r\n  \n").check({" ", "\n", "\n", "\r\n", " ", "\n"}));
     }
 };
 
