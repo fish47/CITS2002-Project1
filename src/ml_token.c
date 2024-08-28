@@ -10,9 +10,13 @@ static int io_cb_read(void *opaque, char *buffer, int capacity);
 static void io_cb_close(void *opaque);
 
 enum token_flag {
+    // trait flags
     TOKEN_FLAG_CR = 1,
     TOKEN_FLAG_LF = 1 << 1,
     TOKEN_FLAG_SPACE = 1 << 2,
+
+    // control flags
+    TOKEN_FLAG_SKIP_LINE = 1 << 10,
 };
 
 struct ml_token_ctx {
@@ -206,6 +210,15 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
                 ctx->token_flags |= TOKEN_FLAG_LF;
                 expand_token(ctx);
                 return finish_token(ctx, buf, len, NULL);
+            } else if (ctx->token_flags & TOKEN_FLAG_SKIP_LINE) {
+                // ignore any characters until reaching a line terminator
+                ctx->read_idx++;
+            } else if (c == '#') {
+                // skip this line after returning a comment token
+                enum ml_token_type type = flush_token(ctx, buf, len, ML_TOKEN_TYPE_COMMENT);
+                if (type == ML_TOKEN_TYPE_COMMENT)
+                    ctx->token_flags |= TOKEN_FLAG_SKIP_LINE;
+                return type;
             } else if (c == ' ') {
                 if (!check_pending_token(ctx, TOKEN_FLAG_SPACE))
                     return finish_token(ctx, buf, len, NULL);

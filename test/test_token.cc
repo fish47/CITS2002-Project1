@@ -5,6 +5,7 @@ extern "C" {
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <initializer_list>
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -92,6 +93,7 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
     CPPUNIT_TEST(testLineTerminator);
     CPPUNIT_TEST(testMergedSpace);
     CPPUNIT_TEST(testSpecialCharacter);
+    CPPUNIT_TEST(testComment);
     CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -107,10 +109,11 @@ public:
             ML_TOKEN_TYPE_DIVIDE,
             ML_TOKEN_TYPE_PARENTHESIS_L,
             ML_TOKEN_TYPE_PARENTHESIS_R,
+            ML_TOKEN_TYPE_COMMENT,
             ML_TOKEN_TYPE_LINE_TERMINATOR,
         };
 
-        Tokenizer t(" \t+-*/()\n");
+        Tokenizer t(" \t+-*/()#\n");
         TokenTypes types;
         while (true) {
             auto type = ml_token_iterate(t.cast(), nullptr, nullptr);
@@ -136,6 +139,12 @@ public:
     void testSpecialCharacter() {
         CPPUNIT_ASSERT(Tokenizer("\t+-*/()").check({"\t", "+", "-", "*", "/", "(", ")"}));
         CPPUNIT_ASSERT(Tokenizer("   +   -  ").check({" ", "+", " ", "-", " "}));
+    }
+
+    void testComment() {
+        CPPUNIT_ASSERT(Tokenizer("#  + -").check({"#"}));
+        CPPUNIT_ASSERT(Tokenizer("# :-o ##\r\n#").check({"#", "\r\n", "#"}));
+        CPPUNIT_ASSERT(Tokenizer("+-*  # :-)\n/").check({"+", "-", "*", " ", "#", "\n", "/"}));
     }
 };
 
