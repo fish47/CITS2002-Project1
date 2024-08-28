@@ -115,8 +115,10 @@ static void io_cb_close(void *opaque) {
     fclose(f);
 }
 
-static enum ml_token_type finish_token(struct ml_token_ctx *ctx, const char **buf, int *len) {
-    enum ml_token_type found = ML_TOKEN_TYPE_ERROR;
+static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
+                                       const char **buf, int *len,
+                                       enum ml_token_type *hint) {
+    enum ml_token_type found = hint ? *hint : ML_TOKEN_TYPE_ERROR;
     if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF))
         found = ML_TOKEN_TYPE_LINE_TERMINATOR;
     else if (ctx->token_flags & TOKEN_FLAG_SPACE)
@@ -153,6 +155,16 @@ static bool check_pending_token(struct ml_token_ctx *ctx, int flags) {
     return !ctx->token_idx || (ctx->token_flags & flags);
 }
 
+static enum ml_token_type flush_token(struct ml_token_ctx *ctx,
+                                      const char **buf, int *len,
+                                      enum ml_token_type type) {
+    if (ctx->token_idx)
+        return finish_token(ctx, buf, len, NULL);
+
+    expand_token(ctx);
+    return finish_token(ctx, buf, len, &type);
+}
+
 enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, int *len) {
     if (ctx->stop_reading)
         return ML_TOKEN_TYPE_EOF;
@@ -167,7 +179,7 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
 
                 // flush the pending token
                 if (ctx->token_idx)
-                    return finish_token(ctx, buf, len);
+                    return finish_token(ctx, buf, len, NULL);
                 return ML_TOKEN_TYPE_EOF;
             }
             ctx->read_count = n;
@@ -178,25 +190,25 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
             if (c == '\r') {
                 // cannot be merged with other characters except CRLF
                 if (!check_pending_token(ctx, TOKEN_FLAG_CR | TOKEN_FLAG_LF))
-                    return finish_token(ctx, buf, len);
+                    return finish_token(ctx, buf, len, NULL);
 
                 // if there are successive CR characters, each one should be a line terminator
                 if (ctx->token_flags & TOKEN_FLAG_CR)
-                    return finish_token(ctx, buf, len);
+                    return finish_token(ctx, buf, len, NULL);
 
                 ctx->token_flags |= TOKEN_FLAG_CR;
                 expand_token(ctx);
             } else if (c == '\n') {
                 if (!check_pending_token(ctx, TOKEN_FLAG_CR | TOKEN_FLAG_LF))
-                    return finish_token(ctx, buf, len);
+                    return finish_token(ctx, buf, len, NULL);
 
                 // may be the Unix style (LF) or the Windows style (CRLF)
                 ctx->token_flags |= TOKEN_FLAG_LF;
                 expand_token(ctx);
-                return finish_token(ctx, buf, len);
+                return finish_token(ctx, buf, len, NULL);
             } else if (c == ' ') {
                 if (!check_pending_token(ctx, TOKEN_FLAG_SPACE))
-                    return finish_token(ctx, buf, len);
+                    return finish_token(ctx, buf, len, NULL);
 
                 // merge successive spaces into one
                 if (ctx->token_idx) {
@@ -205,9 +217,23 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
                     expand_token(ctx);
                     ctx->token_flags |= TOKEN_FLAG_SPACE;
                 }
+            } else if (c == '\t') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_TAB);
+            } else if (c == '+') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PLUS);
+            } else if (c == '-') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_MINUS);
+            } else if (c == '*') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_MULTIPLY);
+            } else if (c == '/') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_DIVIDE);
+            } else if (c == '(') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PARENTHESIS_L);
+            } else if (c == ')') {
+                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PARENTHESIS_R);
             } else {
                 if (ctx->token_idx)
-                    return finish_token(ctx, buf, len);
+                    return finish_token(ctx, buf, len, NULL);
 
                 ctx->read_idx++;
             }

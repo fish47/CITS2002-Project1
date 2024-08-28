@@ -88,11 +88,40 @@ public:
 class TestTokenAnalyze : public CppUnit::TestFixture {
 
     CPPUNIT_TEST_SUITE(TestTokenAnalyze);
+    CPPUNIT_TEST(testTypes);
     CPPUNIT_TEST(testLineTerminator);
     CPPUNIT_TEST(testMergedSpace);
+    CPPUNIT_TEST(testSpecialCharacter);
     CPPUNIT_TEST_SUITE_END();
 
 public:
+    void testTypes() {
+        using TokenTypes = std::vector<ml_token_type>;
+
+        const TokenTypes expected {
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_TAB,
+            ML_TOKEN_TYPE_PLUS,
+            ML_TOKEN_TYPE_MINUS,
+            ML_TOKEN_TYPE_MULTIPLY,
+            ML_TOKEN_TYPE_DIVIDE,
+            ML_TOKEN_TYPE_PARENTHESIS_L,
+            ML_TOKEN_TYPE_PARENTHESIS_R,
+            ML_TOKEN_TYPE_LINE_TERMINATOR,
+        };
+
+        Tokenizer t(" \t+-*/()\n");
+        TokenTypes types;
+        while (true) {
+            auto type = ml_token_iterate(t.cast(), nullptr, nullptr);
+            if (type == ML_TOKEN_TYPE_EOF)
+                break;
+            types.push_back(type);
+        }
+
+        CPPUNIT_ASSERT(types == expected);
+    }
+
     void testLineTerminator() {
         CPPUNIT_ASSERT(Tokenizer("\r\r\r").check({"\r", "\r", "\r"}));
         CPPUNIT_ASSERT(Tokenizer("\n\n\n").check({"\n", "\n", "\n"}));
@@ -102,6 +131,11 @@ public:
     void testMergedSpace() {
         CPPUNIT_ASSERT(Tokenizer("  \n    \n ").check({" ", "\n", " ", "\n", " "}));
         CPPUNIT_ASSERT(Tokenizer(" \n\n\r\n  \n").check({" ", "\n", "\n", "\r\n", " ", "\n"}));
+    }
+
+    void testSpecialCharacter() {
+        CPPUNIT_ASSERT(Tokenizer("\t+-*/()").check({"\t", "+", "-", "*", "/", "(", ")"}));
+        CPPUNIT_ASSERT(Tokenizer("   +   -  ").check({" ", "+", " ", "-", " "}));
     }
 };
 
