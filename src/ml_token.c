@@ -1,5 +1,6 @@
 #include "ml_token.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -133,7 +134,11 @@ static void clear_token(struct ml_token_ctx *ctx) {
     ctx->token_flags = 0;
 }
 
-static enum ml_token_type raise_error(struct ml_token_ctx *ctx) {
+static enum ml_token_type raise_error(struct ml_token_ctx *ctx, struct ml_token_result *result) {
+    if (result) {
+        result->buf = NULL;
+        result->len = 0;
+    }
     clear_token(ctx);
     ctx->read_idx++;
     ctx->token_flags |= TOKEN_FLAG_SKIP_LINE;
@@ -155,27 +160,39 @@ static enum ml_token_type resolve_name_token(struct ml_token_ctx *ctx) {
         return ML_TOKEN_TYPE_NAME;
 }
 
+static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
+                                               struct ml_token_result *result) {
+    float value = strtod(ctx->token_buffer, NULL);
+    if (errno)
+        return ML_TOKEN_TYPE_ERROR;
+
+    result->value.real = value;
+    return ML_TOKEN_TYPE_NUMBER;
+}
+
 static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
-                                       const char **buf, int *len,
+                                       struct ml_token_result *result,
                                        enum ml_token_type *hint) {
+    // the token is zero-terminated string now
+    ctx->token_buffer[ctx->token_idx] = 0;
+
     enum ml_token_type found = hint ? *hint : ML_TOKEN_TYPE_ERROR;
     if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF))
         found = ML_TOKEN_TYPE_LINE_TERMINATOR;
     else if (ctx->token_flags & TOKEN_FLAG_SPACE)
         found = ML_TOKEN_TYPE_SPACE;
     else if (ctx->token_flags & TOKEN_FLAG_NUMBER)
-        found = ML_TOKEN_TYPE_NUMBER;
+        found = resolve_number_token(ctx, result);
     else if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
         found = resolve_name_token(ctx);
 
     if (found == ML_TOKEN_TYPE_ERROR)
-        return raise_error(ctx);
+        return raise_error(ctx, result);
 
-    ctx->token_buffer[ctx->token_idx] = 0;
-    if (buf)
-        *buf = ctx->token_buffer;
-    if (len)
-        *len = ctx->token_idx;
+    if (result) {
+        result->buf = ctx->token_buffer;
+        result->len = ctx->token_idx;
+    }
 
     clear_token(ctx);
     return found;
@@ -200,16 +217,16 @@ static bool check_pending_token(struct ml_token_ctx *ctx, int flags) {
 }
 
 static enum ml_token_type flush_token(struct ml_token_ctx *ctx,
-                                      const char **buf, int *len,
+                                      struct ml_token_result *result,
                                       enum ml_token_type type) {
     if (ctx->token_idx)
-        return finish_token(ctx, buf, len, NULL);
+        return finish_token(ctx, result, NULL);
 
     expand_token(ctx);
-    return finish_token(ctx, buf, len, &type);
+    return finish_token(ctx, result, &type);
 }
 
-enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, int *len) {
+enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_result *result) {
     if (ctx->stop_reading)
         return ML_TOKEN_TYPE_EOF;
 
@@ -223,7 +240,7 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
 
                 // flush the pending token
                 if (ctx->token_idx)
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
                 return ML_TOKEN_TYPE_EOF;
             }
             ctx->read_count = n;
@@ -234,34 +251,34 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
             if (c == '\r') {
                 // cannot be merged with other characters except CRLF
                 if (!check_pending_token(ctx, TOKEN_FLAG_CR | TOKEN_FLAG_LF))
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 // if there are successive CR characters, each one should be a line terminator
                 if (ctx->token_flags & TOKEN_FLAG_CR)
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 ctx->token_flags |= TOKEN_FLAG_CR;
                 expand_token(ctx);
             } else if (c == '\n') {
                 if (!check_pending_token(ctx, TOKEN_FLAG_CR | TOKEN_FLAG_LF))
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 // may be the Unix style (LF) or the Windows style (CRLF)
                 ctx->token_flags |= TOKEN_FLAG_LF;
                 expand_token(ctx);
-                return finish_token(ctx, buf, len, NULL);
+                return finish_token(ctx, result, NULL);
             } else if (ctx->token_flags & TOKEN_FLAG_SKIP_LINE) {
                 // ignore any characters until reaching a line terminator
                 ctx->read_idx++;
             } else if (c == '#') {
                 // skip this line after returning a comment token
-                enum ml_token_type type = flush_token(ctx, buf, len, ML_TOKEN_TYPE_COMMENT);
+                enum ml_token_type type = flush_token(ctx, result, ML_TOKEN_TYPE_COMMENT);
                 if (type == ML_TOKEN_TYPE_COMMENT)
                     ctx->token_flags |= TOKEN_FLAG_SKIP_LINE;
                 return type;
             } else if (c == ' ') {
                 if (!check_pending_token(ctx, TOKEN_FLAG_SPACE))
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 // merge successive spaces into one
                 if (ctx->token_idx) {
@@ -272,67 +289,65 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
                 }
             } else if ('0' <= c && c <= '9') {
                 if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
-                    return raise_error(ctx);
+                    return raise_error(ctx, result);
 
                 if (!check_pending_token(ctx, (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT)))
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_NUMBER;
             } else if (c == '.') {
                 if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
-                    return raise_error(ctx);
+                    return raise_error(ctx, result);
 
                 if (!check_pending_token(ctx, (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT)))
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 // a redundant dot
                 if (ctx->token_flags & TOKEN_FLAG_DOT)
-                    return raise_error(ctx);
+                    return raise_error(ctx, result);
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_DOT;
             } else if ('a' <= c && c <= 'z') {
                 // identifiers only consist of alphabets
                 if (ctx->token_flags & (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT))
-                    return raise_error(ctx);
+                    return raise_error(ctx, result);
 
                 if (!check_pending_token(ctx, TOKEN_FLAG_ALPHABET))
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_ALPHABET;
             } else if (c == '<') {
                 if (ctx->token_flags & TOKEN_FLAG_LESS_THAN)
-                    return raise_error(ctx);
+                    return raise_error(ctx, result);
                 else if (ctx->token_idx)
-                    return finish_token(ctx, buf, len, NULL);
+                    return finish_token(ctx, result, NULL);
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_LESS_THAN;
             } else if (c == '\t') {
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_TAB);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_TAB);
             } else if (c == '+') {
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PLUS);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_PLUS);
             } else if (c == '-') {
                 if (ctx->token_flags & TOKEN_FLAG_LESS_THAN) {
                     expand_token(ctx);
-                    return finish_token(ctx, buf, len, &(enum ml_token_type) {
-                        ML_TOKEN_TYPE_ASSIGNMENT
-                    });
+                    return finish_token(ctx, result, &(enum ml_token_type) {ML_TOKEN_TYPE_ASSIGNMENT});
                 }
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_MINUS);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_MINUS);
             } else if (c == '*') {
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_MULTIPLY);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_MULTIPLY);
             } else if (c == '/') {
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_DIVIDE);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_DIVIDE);
             } else if (c == '(') {
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PARENTHESIS_L);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_PARENTHESIS_L);
             } else if (c == ')') {
-                return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PARENTHESIS_R);
+                return flush_token(ctx, result, ML_TOKEN_TYPE_PARENTHESIS_R);
             } else {
                 if (ctx->token_idx)
-                    return raise_error(ctx);
+                    return raise_error(ctx, result);
 
                 ctx->read_idx++;
             }

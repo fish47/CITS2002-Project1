@@ -30,8 +30,9 @@ private:
     bool doCheck(F func) {
         while (true) {
             const char *token = nullptr;
-            auto type = ml_token_iterate(ctx, &token, nullptr);
-            if (!func(type, token))
+            ml_token_result result = {0};
+            auto type = ml_token_iterate(ctx, &result);
+            if (!func(type, &result))
                 return false;
             if (type == ML_TOKEN_TYPE_EOF)
                 break;
@@ -56,14 +57,14 @@ public:
 
     bool check(std::initializer_list<std::string> tokens) {
         auto it = tokens.begin();
-        return doCheck([&it, &tokens](enum ml_token_type type, const char *token) {
-            return it == tokens.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == token);
+        return doCheck([&it, &tokens](enum ml_token_type type, const ml_token_result *result) {
+            return it == tokens.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == result->buf);
         });
     }
 
     bool check(std::initializer_list<enum ml_token_type> types) {
         auto it = types.begin();
-        return doCheck([&it, &types](enum ml_token_type type, const char *token) {
+        return doCheck([&it, &types](enum ml_token_type type, const ml_token_result *result) {
             return it == types.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == type);
         });
     }
@@ -92,9 +93,9 @@ class TestTokenBase : public CppUnit::TestFixture {
 public:
     void testStopIterate() {
         Tokenizer t("abc");
-        ml_token_iterate(t.cast(), nullptr, nullptr);
+        ml_token_iterate(t.cast(), nullptr);
         for (int i = 0; i < 10; i++)
-            CPPUNIT_ASSERT_EQUAL(ML_TOKEN_TYPE_EOF, ml_token_iterate(t.cast(), nullptr, nullptr));
+            CPPUNIT_ASSERT_EQUAL(ML_TOKEN_TYPE_EOF, ml_token_iterate(t.cast(), nullptr));
     }
 };
 
@@ -102,6 +103,7 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
 
     CPPUNIT_TEST_SUITE(TestTokenAnalyze);
     CPPUNIT_TEST(testTypes);
+    CPPUNIT_TEST(testValues);
     CPPUNIT_TEST(testLineTerminator);
     CPPUNIT_TEST(testMergedSpace);
     CPPUNIT_TEST(testSpecialCharacter);
@@ -115,6 +117,14 @@ private:
     static bool isInvalidToken(const char *str) {
         return Tokenizer(str).check({ML_TOKEN_TYPE_ERROR});
     }
+
+    static ml_token_result parseTokenValue(const char *str) {
+        Tokenizer tokenizer(str);
+        ml_token_result result = {0};
+        ml_token_iterate(tokenizer.cast(), &result);
+        return result;
+    }
+
 
 public:
     void testTypes() {
@@ -142,6 +152,10 @@ public:
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_FUNCTION,
         }));
+    }
+
+    void testValues() {
+        CPPUNIT_ASSERT_EQUAL(1234.5, parseTokenValue("1234.5").value.real);
     }
 
     void testLineTerminator() {

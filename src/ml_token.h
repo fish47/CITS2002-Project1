@@ -9,6 +9,14 @@ struct ml_token_io_fns {
     void (*close)(void *opaque);
 };
 
+struct ml_token_result {
+    const char *buf;
+    int len;
+    union {
+        double real;
+    } value;
+};
+
 enum ml_token_type {
     ML_TOKEN_TYPE_EOF,
     ML_TOKEN_TYPE_ERROR,
@@ -37,4 +45,4 @@ bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fn
 
 void ml_token_ctx_uninit(struct ml_token_ctx **pp);
 
-enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, int *len);
+enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_result *result);
