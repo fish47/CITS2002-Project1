@@ -108,6 +108,7 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
     CPPUNIT_TEST(testComment);
     CPPUNIT_TEST(testNumber);
     CPPUNIT_TEST(testIdentifier);
+    CPPUNIT_TEST(testAssignmentOperator);
     CPPUNIT_TEST_SUITE_END();
 
 private:
@@ -117,7 +118,7 @@ private:
 
 public:
     void testTypes() {
-        CPPUNIT_ASSERT(Tokenizer(" \t+-*/()1.1#\n").check({
+        CPPUNIT_ASSERT(Tokenizer(" \t+-*/()1.1#\n<-").check({
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_TAB,
             ML_TOKEN_TYPE_PLUS,
@@ -129,6 +130,7 @@ public:
             ML_TOKEN_TYPE_NUMBER,
             ML_TOKEN_TYPE_COMMENT,
             ML_TOKEN_TYPE_LINE_TERMINATOR,
+            ML_TOKEN_TYPE_ASSIGNMENT,
         }));
 
         CPPUNIT_ASSERT(Tokenizer("abc print return function").check({
@@ -212,6 +214,17 @@ public:
         CPPUNIT_ASSERT(isInvalidToken("1abc"));
         CPPUNIT_ASSERT(isInvalidToken("a."));
         CPPUNIT_ASSERT(isInvalidToken(".b"));
+    }
+
+    void testAssignmentOperator() {
+        CPPUNIT_ASSERT(Tokenizer("a<-b").check({"a", "<-", "b"}));
+        CPPUNIT_ASSERT(isInvalidToken("< "));
+        CPPUNIT_ASSERT(isInvalidToken("<."));
+        CPPUNIT_ASSERT(isInvalidToken("<1"));
+        CPPUNIT_ASSERT(isInvalidToken("<a"));
+        CPPUNIT_ASSERT(isInvalidToken("<#"));
+        CPPUNIT_ASSERT(isInvalidToken("<<"));
+        CPPUNIT_ASSERT(isInvalidToken("<("));
     }
 };
 

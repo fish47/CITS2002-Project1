@@ -22,6 +22,7 @@ enum token_flag {
     TOKEN_FLAG_DOT = 1 << 3,
     TOKEN_FLAG_NUMBER = 1 << 4,
     TOKEN_FLAG_ALPHABET = 1 << 5,
+    TOKEN_FLAG_LESS_THAN = 1 << 6,
 
     // control flags
     TOKEN_FLAG_SKIP_LINE = 1 << 10,
@@ -301,11 +302,25 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, const char **buf, 
 
                 expand_token(ctx);
                 ctx->token_flags |= TOKEN_FLAG_ALPHABET;
+            } else if (c == '<') {
+                if (ctx->token_flags & TOKEN_FLAG_LESS_THAN)
+                    return raise_error(ctx);
+                else if (ctx->token_idx)
+                    return finish_token(ctx, buf, len, NULL);
+
+                expand_token(ctx);
+                ctx->token_flags |= TOKEN_FLAG_LESS_THAN;
             } else if (c == '\t') {
                 return flush_token(ctx, buf, len, ML_TOKEN_TYPE_TAB);
             } else if (c == '+') {
                 return flush_token(ctx, buf, len, ML_TOKEN_TYPE_PLUS);
             } else if (c == '-') {
+                if (ctx->token_flags & TOKEN_FLAG_LESS_THAN) {
+                    expand_token(ctx);
+                    return finish_token(ctx, buf, len, &(enum ml_token_type) {
+                        ML_TOKEN_TYPE_ASSIGNMENT
+                    });
+                }
                 return flush_token(ctx, buf, len, ML_TOKEN_TYPE_MINUS);
             } else if (c == '*') {
                 return flush_token(ctx, buf, len, ML_TOKEN_TYPE_MULTIPLY);
