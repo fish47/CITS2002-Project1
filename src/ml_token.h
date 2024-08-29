@@ -13,6 +13,7 @@ struct ml_token_result {
     const char *buf;
     int len;
     union {
+        int index;
         double real;
     } value;
 };
@@ -25,6 +26,7 @@ enum ml_token_type {
     ML_TOKEN_TYPE_PRINT,
     ML_TOKEN_TYPE_RETURN,
     ML_TOKEN_TYPE_FUNCTION,
+    ML_TOKEN_TYPE_ARGUMENT,
     ML_TOKEN_TYPE_ASSIGNMENT,
     ML_TOKEN_TYPE_COMMENT,
     ML_TOKEN_TYPE_SPACE,

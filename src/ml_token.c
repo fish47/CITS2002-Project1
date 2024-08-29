@@ -4,10 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #define DEFAULT_READ_BUFFER_SIZE    1024
 #define DEFAULT_TOKEN_BUFFER_SIZE   64
 
+#define ML_KEYWORD_ARGUMENT     "arg"
 #define ML_KEYWORD_PRINT        "print"
 #define ML_KEYWORD_RETURN       "return"
 #define ML_KEYWORD_FUNCTION     "function"
@@ -24,6 +26,7 @@ enum token_flag {
     TOKEN_FLAG_NUMBER = 1 << 4,
     TOKEN_FLAG_ALPHABET = 1 << 5,
     TOKEN_FLAG_LESS_THAN = 1 << 6,
+    TOKEN_FLAG_ARGUMENT = 1 << 7,
 
     // control flags
     TOKEN_FLAG_SKIP_LINE = 1 << 10,
@@ -170,6 +173,27 @@ static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
     return ML_TOKEN_TYPE_NUMBER;
 }
 
+static enum ml_token_type resolve_argument_token(struct ml_token_ctx *ctx,
+                                                 struct ml_token_result *result) {
+    // an argument should consist of alphabets and numbers
+    if (ctx->token_flags & ~(TOKEN_FLAG_ALPHABET | TOKEN_FLAG_NUMBER | TOKEN_FLAG_ARGUMENT))
+        return ML_TOKEN_TYPE_ERROR;
+
+    // parse the argument index
+    int num_offset = sizeof(ML_KEYWORD_ARGUMENT) - 1;
+    const char *num_str = ctx->token_buffer + num_offset;
+    int index = strtoimax(num_str, NULL, 10);
+    if (errno)
+        return ML_TOKEN_TYPE_ERROR;
+
+    // numbers with leading zeros are invalid
+    if (index < 10 && num_offset + 1 != ctx->token_idx)
+        return ML_TOKEN_TYPE_ERROR;
+
+    result->value.index = index;
+    return ML_TOKEN_TYPE_ARGUMENT;
+}
+
 static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
                                        struct ml_token_result *result,
                                        enum ml_token_type *hint) {
@@ -181,6 +205,8 @@ static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
         found = ML_TOKEN_TYPE_LINE_TERMINATOR;
     else if (ctx->token_flags & TOKEN_FLAG_SPACE)
         found = ML_TOKEN_TYPE_SPACE;
+    else if (ctx->token_flags & TOKEN_FLAG_ARGUMENT)
+        found = resolve_argument_token(ctx, result);
     else if (ctx->token_flags & TOKEN_FLAG_NUMBER)
         found = resolve_number_token(ctx, result);
     else if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
@@ -288,10 +314,17 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_re
                     ctx->token_flags |= TOKEN_FLAG_SPACE;
                 }
             } else if ('0' <= c && c <= '9') {
-                if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
-                    return raise_error(ctx, result);
+                if (ctx->token_flags & TOKEN_FLAG_ARGUMENT) {
+                    // has more index digits
+                } else if (ctx->token_flags & TOKEN_FLAG_ALPHABET) {
+                    // check if the accumulated token has the argument prefix
+                    if (is_keyword_matched(ctx, sizeof(ML_KEYWORD_ARGUMENT) - 1, ML_KEYWORD_ARGUMENT))
+                        ctx->token_flags |= TOKEN_FLAG_ARGUMENT;
+                    else
+                        return raise_error(ctx, result);
+                }
 
-                if (!check_pending_token(ctx, (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT)))
+                if (!check_pending_token(ctx, (TOKEN_FLAG_NUMBER | TOKEN_FLAG_DOT | TOKEN_FLAG_ARGUMENT)))
                     return finish_token(ctx, result, NULL);
 
                 expand_token(ctx);

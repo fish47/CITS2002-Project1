@@ -58,7 +58,9 @@ public:
     bool check(std::initializer_list<std::string> tokens) {
         auto it = tokens.begin();
         return doCheck([&it, &tokens](enum ml_token_type type, const ml_token_result *result) {
-            return it == tokens.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == result->buf);
+            return it == tokens.end()
+                ? (type == ML_TOKEN_TYPE_EOF)
+                : (result->buf && *it++ == result->buf);
         });
     }
 
@@ -111,6 +113,7 @@ class TestTokenAnalyze : public CppUnit::TestFixture {
     CPPUNIT_TEST(testNumber);
     CPPUNIT_TEST(testIdentifier);
     CPPUNIT_TEST(testAssignmentOperator);
+    CPPUNIT_TEST(testArgument);
     CPPUNIT_TEST_SUITE_END();
 
 private:
@@ -143,7 +146,7 @@ public:
             ML_TOKEN_TYPE_ASSIGNMENT,
         }));
 
-        CPPUNIT_ASSERT(Tokenizer("abc print return function").check({
+        CPPUNIT_ASSERT(Tokenizer("abc print return function arg0").check({
             ML_TOKEN_TYPE_NAME,
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_PRINT,
@@ -151,11 +154,14 @@ public:
             ML_TOKEN_TYPE_RETURN,
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_FUNCTION,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ARGUMENT,
         }));
     }
 
     void testValues() {
         CPPUNIT_ASSERT_EQUAL(1234.5, parseTokenValue("1234.5").value.real);
+        CPPUNIT_ASSERT_EQUAL(1234, parseTokenValue("arg1234").value.index);
     }
 
     void testLineTerminator() {
@@ -239,6 +245,22 @@ public:
         CPPUNIT_ASSERT(isInvalidToken("<#"));
         CPPUNIT_ASSERT(isInvalidToken("<<"));
         CPPUNIT_ASSERT(isInvalidToken("<("));
+    }
+
+    void testArgument() {
+        CPPUNIT_ASSERT(Tokenizer("arg arg0 arg9").check({"arg", " ", "arg0", " ", "arg9"}));
+        CPPUNIT_ASSERT(isInvalidToken("arg00"));
+        CPPUNIT_ASSERT(isInvalidToken("arg1."));
+        CPPUNIT_ASSERT(isInvalidToken("arg1x"));
+        CPPUNIT_ASSERT(Tokenizer("arg argx xarg arg2024").check({
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ARGUMENT,
+        }));
     }
 };
 
