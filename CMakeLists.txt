@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
 project(runml)
 
@@ -48,6 +48,12 @@ target_include_directories(runml_test
 target_link_libraries(runml_test
     # PRIVATE runml_lib
     PkgConfig::_pkg_cppunit
+)
+
+target_precompile_headers(runml_test
+    PRIVATE
+        <algorithm>
+        <cppunit/extensions/HelperMacros.h>
 )
 
 enable_testing()
