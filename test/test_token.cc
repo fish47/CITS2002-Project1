@@ -2,12 +2,12 @@ extern "C" {
 #include "ml_token.h"
 }
 
+#include "base.h"
+
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
 #include <initializer_list>
-
-#include <cppunit/extensions/HelperMacros.h>
 
 namespace runml {
 
@@ -28,6 +28,7 @@ private:
 private:
     template <typename F>
     bool doCheck(F func) {
+        CPPUNIT_ASSERT(ctx);
         while (true) {
             const char *token = nullptr;
             ml_token_result result = {0};
@@ -48,7 +49,8 @@ public:
     }
 
     ~Tokenizer() {
-        ml_token_ctx_uninit(&ctx);
+        if (ctx)
+            ml_token_ctx_uninit(&ctx);
     }
 
     struct ml_token_ctx *cast() const {
@@ -86,10 +88,11 @@ const ml_token_io_fns Tokenizer::string_io_fns = {
     doCloseString,
 };
 
-class TestTokenBase : public CppUnit::TestFixture {
+class TestTokenBase : public BaseTextFixture {
 
     CPPUNIT_TEST_SUITE(TestTokenBase);
     CPPUNIT_TEST(testStopIterate);
+    CPPUNIT_TEST(testInitFail);
     CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -99,9 +102,16 @@ public:
         for (int i = 0; i < 10; i++)
             CPPUNIT_ASSERT_EQUAL(ML_TOKEN_TYPE_EOF, ml_token_iterate(t.cast(), nullptr));
     }
+
+    void testInitFail() {
+        for (int i = 0; i <= 2; i++) {
+            setMaxAllocCount(i);
+            CPPUNIT_ASSERT(!Tokenizer("haha").cast());
+        }
+    }
 };
 
-class TestTokenAnalyze : public CppUnit::TestFixture {
+class TestTokenAnalyze : public BaseTextFixture {
 
     CPPUNIT_TEST_SUITE(TestTokenAnalyze);
     CPPUNIT_TEST(testTypes);

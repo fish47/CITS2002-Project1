@@ -15,16 +15,20 @@ pkg_check_modules(_pkg_cppunit
 )
 
 set(runml_src_test
+    test/base.h
+    test/base.cc
     test/main.cc
     test/test_token.cc
 )
 
 set(runml_src_lib
+    src/ml_memory.h
     src/ml_token.h
     src/ml_token.c
 )
 
 set(runml_src_main
+    src/ml_memory.c
     src/main.c
 )
 

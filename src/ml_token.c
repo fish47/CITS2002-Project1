@@ -1,4 +1,5 @@
 #include "ml_token.h"
+#include "ml_memory.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -67,15 +68,15 @@ bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fn
     char *token_buffer = NULL;
     struct ml_token_ctx *ctx = NULL;
 
-    ctx = malloc(sizeof(struct ml_token_ctx));
+    ctx = ml_memory_malloc(sizeof(struct ml_token_ctx));
     if (!ctx)
         goto fail;
 
-    read_buffer = malloc(read_capacity);
+    read_buffer = ml_memory_malloc(read_capacity);
     if (!read_buffer)
         goto fail;
 
-    token_buffer = malloc(token_capacity);
+    token_buffer = ml_memory_malloc(token_capacity);
     if (!token_buffer)
         goto fail;
 
@@ -99,11 +100,11 @@ fail:
     if (opaque)
         fns->close(opaque);
     if (read_buffer)
-        free(read_buffer);
+        ml_memory_free(read_buffer);
     if (token_buffer)
-        free(token_buffer);
+        ml_memory_free(token_buffer);
     if (ctx)
-        free(ctx);
+        ml_memory_free(ctx);
     return false;
 }
 
@@ -115,10 +116,10 @@ void ml_token_ctx_uninit(struct ml_token_ctx **pp) {
     if (ctx->io_opaque)
         ctx->io_fns->close(ctx->io_opaque);
     if (ctx->read_buffer)
-        free(ctx->read_buffer);
+        ml_memory_free(ctx->read_buffer);
     if (ctx->token_buffer)
-        free(ctx->token_buffer);
-    free(ctx);
+        ml_memory_free(ctx->token_buffer);
+    ml_memory_free(ctx);
     *pp = NULL;
 }
 
@@ -228,7 +229,7 @@ static void expand_token(struct ml_token_ctx *ctx) {
     // it should be large enough with a zero terminator
     if (ctx->token_idx + 2 >= ctx->token_capacity) {
         int new_capacity = ctx->token_capacity << 1;
-        char *new_buffer = realloc(ctx->token_buffer, new_capacity);
+        char *new_buffer = ml_memory_realloc(ctx->token_buffer, new_capacity);
         ctx->token_buffer = new_buffer;
         ctx->token_capacity = new_capacity;
     }
