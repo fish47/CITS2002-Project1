@@ -93,6 +93,7 @@ class TestTokenBase : public BaseTextFixture {
     CPPUNIT_TEST_SUITE(TestTokenBase);
     CPPUNIT_TEST(testStopIterate);
     CPPUNIT_TEST(testInitFail);
+    CPPUNIT_TEST(testGrowBufferFail);
     CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -108,6 +109,24 @@ public:
             setMaxAllocCount(i);
             CPPUNIT_ASSERT(!Tokenizer("haha").cast());
         }
+    }
+
+    void testGrowBufferFail() {
+        setMaxAllocSize(200);
+
+        std::string str;
+        str += "a ";
+        str += std::string(200, 'b');
+        str += " c d\n";
+        str += "e";
+
+        CPPUNIT_ASSERT(Tokenizer(str.c_str(), 4).check({
+            ML_TOKEN_TYPE_NAME,
+            ML_TOKEN_TYPE_SPACE,
+            ML_TOKEN_TYPE_ERROR,
+            ML_TOKEN_TYPE_LINE_TERMINATOR,
+            ML_TOKEN_TYPE_NAME,
+        }));
     }
 };
 

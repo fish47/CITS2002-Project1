@@ -34,6 +34,7 @@ enum token_flag {
     // control flags
     TOKEN_FLAG_SKIP_LINE = 1 << 10,
     TOKEN_FLAG_STOP_READING = 1 << 11,
+    TOKEN_FLAG_INTERNAL_ERROR = 1 << 12,
 };
 
 struct ml_token_ctx {
@@ -203,7 +204,10 @@ static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
     ctx->token_buffer[ctx->token_idx] = 0;
 
     enum ml_token_type found = hint ? *hint : ML_TOKEN_TYPE_ERROR;
-    if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF)) {
+    if (ctx->token_flags & TOKEN_FLAG_INTERNAL_ERROR) {
+        ctx->token_flags &= ~TOKEN_FLAG_INTERNAL_ERROR;
+        found = ML_TOKEN_TYPE_ERROR;
+    } else if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF)) {
         ctx->token_flags &= ~TOKEN_FLAG_SKIP_LINE;
         found = ML_TOKEN_TYPE_LINE_TERMINATOR;
     } else if (ctx->token_flags & TOKEN_FLAG_SPACE) {
@@ -230,14 +234,22 @@ static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
 
 static void expand_token(struct ml_token_ctx *ctx) {
     // it should be large enough with a zero terminator
+    bool grow = true;
     if (ctx->token_idx + 2 >= ctx->token_capacity) {
         int new_capacity = ctx->token_capacity << 1;
         char *new_buffer = ml_memory_realloc(ctx->token_buffer, new_capacity);
-        ctx->token_buffer = new_buffer;
-        ctx->token_capacity = new_capacity;
+        if (new_buffer) {
+            ctx->token_buffer = new_buffer;
+            ctx->token_capacity = new_capacity;
+        } else {
+            grow = false;
+            ctx->token_flags |= TOKEN_FLAG_INTERNAL_ERROR;
+        }
     }
-    ctx->token_buffer[ctx->token_idx] = ctx->read_buffer[ctx->read_idx];
-    ctx->token_idx++;
+    if (grow) {
+        ctx->token_buffer[ctx->token_idx] = ctx->read_buffer[ctx->read_idx];
+        ctx->token_idx++;
+    }
     ctx->read_idx++;
 }
 
@@ -388,6 +400,13 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_re
                     return raise_error(ctx, result);
 
                 ctx->read_idx++;
+            }
+
+            // if something goes wrong, try to skip the whole line and see if it can be recovered
+            if (ctx->token_flags & TOKEN_FLAG_INTERNAL_ERROR) {
+                enum ml_token_type type = finish_token(ctx, result, NULL);
+                ctx->token_flags |= TOKEN_FLAG_SKIP_LINE;
+                return type;
             }
         }
     }
