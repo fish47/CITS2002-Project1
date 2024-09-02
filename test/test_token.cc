@@ -31,9 +31,9 @@ private:
         CPPUNIT_ASSERT(ctx);
         while (true) {
             const char *token = nullptr;
-            ml_token_result result = {0};
-            auto type = ml_token_iterate(ctx, &result);
-            if (!func(type, &result))
+            ml_token_data data = {0};
+            auto type = ml_token_iterate(ctx, &data);
+            if (!func(type, &data))
                 return false;
             if (type == ML_TOKEN_TYPE_EOF)
                 break;
@@ -59,16 +59,16 @@ public:
 
     bool check(std::initializer_list<std::string> tokens) {
         auto it = tokens.begin();
-        return doCheck([&it, &tokens](enum ml_token_type type, const ml_token_result *result) {
+        return doCheck([&it, &tokens](enum ml_token_type type, const ml_token_data *data) {
             return it == tokens.end()
                 ? (type == ML_TOKEN_TYPE_EOF)
-                : (result->buf && *it++ == result->buf);
+                : (data->buf && *it++ == data->buf);
         });
     }
 
     bool check(std::initializer_list<enum ml_token_type> types) {
         auto it = types.begin();
-        return doCheck([&it, &types](enum ml_token_type type, const ml_token_result *result) {
+        return doCheck([&it, &types](enum ml_token_type type, const ml_token_data *data) {
             return it == types.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == type);
         });
     }
@@ -150,11 +150,11 @@ private:
         return Tokenizer(str).check({ML_TOKEN_TYPE_ERROR});
     }
 
-    static ml_token_result parseTokenValue(const char *str) {
+    static ml_token_data parseTokenValue(const char *str) {
         Tokenizer tokenizer(str);
-        ml_token_result result = {0};
-        ml_token_iterate(tokenizer.cast(), &result);
-        return result;
+        ml_token_data data = {0};
+        ml_token_iterate(tokenizer.cast(), &data);
+        return data;
     }
 
 
