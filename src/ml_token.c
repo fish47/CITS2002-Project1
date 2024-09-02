@@ -391,6 +391,8 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_re
                 return flush_token(ctx, result, ML_TOKEN_TYPE_MULTIPLY);
             } else if (c == '/') {
                 return flush_token(ctx, result, ML_TOKEN_TYPE_DIVIDE);
+            } else if (c == ',') {
+                return flush_token(ctx, result, ML_TOKEN_TYPE_COMMA);
             } else if (c == '(') {
                 return flush_token(ctx, result, ML_TOKEN_TYPE_PARENTHESIS_L);
             } else if (c == ')') {

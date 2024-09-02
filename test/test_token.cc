@@ -160,13 +160,14 @@ private:
 
 public:
     void testTypes() {
-        CPPUNIT_ASSERT(Tokenizer(" \t+-*/()1.1#\n<-").check({
+        CPPUNIT_ASSERT(Tokenizer(" \t+-*/,()1.1#\n<-").check({
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_TAB,
             ML_TOKEN_TYPE_PLUS,
             ML_TOKEN_TYPE_MINUS,
             ML_TOKEN_TYPE_MULTIPLY,
             ML_TOKEN_TYPE_DIVIDE,
+            ML_TOKEN_TYPE_COMMA,
             ML_TOKEN_TYPE_PARENTHESIS_L,
             ML_TOKEN_TYPE_PARENTHESIS_R,
             ML_TOKEN_TYPE_NUMBER,
@@ -206,7 +207,7 @@ public:
 
     void testSpecialCharacter() {
         CPPUNIT_ASSERT(Tokenizer("\t+-*/()").check({"\t", "+", "-", "*", "/", "(", ")"}));
-        CPPUNIT_ASSERT(Tokenizer("   +   -  ").check({" ", "+", " ", "-", " "}));
+        CPPUNIT_ASSERT(Tokenizer("   +   -  ,").check({" ", "+", " ", "-", " ", ","}));
     }
 
     void testComment() {
