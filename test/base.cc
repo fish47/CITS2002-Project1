@@ -4,8 +4,10 @@ extern "C" {
 
 #include "base.h"
 
+#include <cstring>
 #include <memory>
 #include <vector>
+#include <algorithm>
 #include <unordered_map>
 
 namespace runml {
@@ -118,6 +120,52 @@ void BaseTextFixture::setUp() {
 
 void BaseTextFixture::tearDown() {
     CPPUNIT_ASSERT(g_allocator.reset());
+}
+
+Tokenizer::Tokenizer(const char *s, int read_capacity, int token_capacity)
+    : text(s), count(std::strlen(s)) {
+    ml_token_ctx_init_fns(&ctx, &string_io_fns, this,
+                          read_capacity, token_capacity);
+}
+
+Tokenizer::~Tokenizer() {
+    ml_token_ctx_uninit(&ctx);
+}
+
+int Tokenizer::doReadString(void *opaque, char *buffer, int capacity) {
+    auto ctx = reinterpret_cast<Tokenizer*>(opaque);
+    int count = std::min(ctx->count - ctx->index, capacity);
+    if (count)
+        std::memcpy(buffer, ctx->text + ctx->index, count);
+    ctx->index += count;
+    return count;
+}
+
+const ml_token_io_fns Tokenizer::string_io_fns = {
+    doReadString,
+    doCloseString,
+};
+
+bool Tokenizer::check(std::initializer_list<enum ml_token_type> types) {
+    bool matched = true;
+    auto it = types.begin();
+    iterate([&matched, &it, &types](enum ml_token_type type, const ml_token_data &data) {
+        matched &= (it == types.end())
+            ? (type == ML_TOKEN_TYPE_EOF)
+            : (*it++ == type);
+    });
+    return matched;
+}
+
+bool Tokenizer::check(std::initializer_list<const char*> tokens) {
+    bool matched = true;
+    auto it = tokens.begin();
+    iterate([&matched, &it, &tokens](enum ml_token_type type, const ml_token_data &data) {
+        matched &= (it == tokens.end())
+            ? (type == ML_TOKEN_TYPE_EOF)
+            : (data.buf && *it && std::strcmp(data.buf, *it++) == 0);
+    });
+    return matched;
 }
 
 }

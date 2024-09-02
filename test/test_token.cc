@@ -6,87 +6,9 @@ extern "C" {
 
 #include <cstring>
 #include <cstdio>
-#include <algorithm>
 #include <initializer_list>
 
 namespace runml {
-
-class Tokenizer {
-private:
-    ml_token_ctx *ctx = nullptr;
-    const char *text = nullptr;
-    int index = 0;
-    int count = 0;
-
-private:
-    static int doReadString(void *opaque, char *buffer, int capacity);
-    static void doCloseString(void *opaque) {}
-
-private:
-    static const ml_token_io_fns string_io_fns;
-
-private:
-    template <typename F>
-    bool doCheck(F func) {
-        CPPUNIT_ASSERT(ctx);
-        while (true) {
-            const char *token = nullptr;
-            ml_token_data data = {0};
-            auto type = ml_token_iterate(ctx, &data);
-            if (!func(type, &data))
-                return false;
-            if (type == ML_TOKEN_TYPE_EOF)
-                break;
-        }
-        return true;
-    }
-
-public:
-    Tokenizer(const char *s, int read_capacity = 4, int token_capacity = 32) {
-        text = s;
-        count = std::strlen(s);
-        ml_token_ctx_init_fns(&ctx, &string_io_fns, this, read_capacity, token_capacity);
-    }
-
-    ~Tokenizer() {
-        if (ctx)
-            ml_token_ctx_uninit(&ctx);
-    }
-
-    struct ml_token_ctx *cast() const {
-        return ctx;
-    }
-
-    bool check(std::initializer_list<std::string> tokens) {
-        auto it = tokens.begin();
-        return doCheck([&it, &tokens](enum ml_token_type type, const ml_token_data *data) {
-            return it == tokens.end()
-                ? (type == ML_TOKEN_TYPE_EOF)
-                : (data->buf && *it++ == data->buf);
-        });
-    }
-
-    bool check(std::initializer_list<enum ml_token_type> types) {
-        auto it = types.begin();
-        return doCheck([&it, &types](enum ml_token_type type, const ml_token_data *data) {
-            return it == types.end() ? (type == ML_TOKEN_TYPE_EOF) : (*it++ == type);
-        });
-    }
-};
-
-int Tokenizer::doReadString(void *opaque, char *buffer, int capacity) {
-    auto ctx = reinterpret_cast<Tokenizer*>(opaque);
-    int count = std::min(ctx->count - ctx->index, capacity);
-    if (count)
-        std::memcpy(buffer, ctx->text + ctx->index, count);
-    ctx->index += count;
-    return count;
-}
-
-const ml_token_io_fns Tokenizer::string_io_fns = {
-    doReadString,
-    doCloseString,
-};
 
 class TestTokenBase : public BaseTextFixture {
 
