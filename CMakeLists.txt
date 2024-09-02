@@ -19,12 +19,15 @@ set(runml_src_test
     test/base.cc
     test/main.cc
     test/test_token.cc
+    test/test_compile.cc
 )
 
 set(runml_src_lib
     src/ml_memory.h
     src/ml_token.h
     src/ml_token.c
+    src/ml_compile.h
+    src/ml_compile.c
 )
 
 set(runml_src_main
