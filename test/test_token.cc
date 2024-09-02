@@ -42,10 +42,10 @@ private:
     }
 
 public:
-    Tokenizer(const char *s, int token_capacity = 64) {
+    Tokenizer(const char *s, int read_capacity = 4, int token_capacity = 32) {
         text = s;
         count = std::strlen(s);
-        ml_token_ctx_init_fns(&ctx, &string_io_fns, this, 32, token_capacity);
+        ml_token_ctx_init_fns(&ctx, &string_io_fns, this, read_capacity, token_capacity);
     }
 
     ~Tokenizer() {

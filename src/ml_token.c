@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <inttypes.h>
 
 #define DEFAULT_READ_BUFFER_SIZE    1024
@@ -28,9 +29,11 @@ enum token_flag {
     TOKEN_FLAG_ALPHABET = 1 << 5,
     TOKEN_FLAG_LESS_THAN = 1 << 6,
     TOKEN_FLAG_ARGUMENT = 1 << 7,
+    TOKEN_FLAG_TRAIT_MASK = (1 << 8) - 1,
 
     // control flags
     TOKEN_FLAG_SKIP_LINE = 1 << 10,
+    TOKEN_FLAG_STOP_READING = 1 << 11,
 };
 
 struct ml_token_ctx {
@@ -45,9 +48,7 @@ struct ml_token_ctx {
     char *token_buffer;
     int token_idx;
     int token_capacity;
-    int token_flags;
-
-    bool stop_reading;
+    uint32_t token_flags;
 };
 
 static const struct ml_token_io_fns ml_token_io_fns_file = {
@@ -91,7 +92,6 @@ bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fn
         .token_idx = 0,
         .token_capacity = token_capacity,
         .token_flags = 0,
-        .stop_reading = false,
     };
     *pp = ctx;
     return true;
@@ -135,7 +135,7 @@ static void io_cb_close(void *opaque) {
 
 static void clear_token(struct ml_token_ctx *ctx) {
     ctx->token_idx = 0;
-    ctx->token_flags = 0;
+    ctx->token_flags &= ~TOKEN_FLAG_TRAIT_MASK;
 }
 
 static enum ml_token_type raise_error(struct ml_token_ctx *ctx, struct ml_token_result *result) {
@@ -177,7 +177,8 @@ static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
 static enum ml_token_type resolve_argument_token(struct ml_token_ctx *ctx,
                                                  struct ml_token_result *result) {
     // an argument should consist of alphabets and numbers
-    if (ctx->token_flags & ~(TOKEN_FLAG_ALPHABET | TOKEN_FLAG_NUMBER | TOKEN_FLAG_ARGUMENT))
+    uint32_t traits = ctx->token_flags & TOKEN_FLAG_TRAIT_MASK;
+    if (traits & ~(TOKEN_FLAG_ALPHABET | TOKEN_FLAG_NUMBER | TOKEN_FLAG_ARGUMENT))
         return ML_TOKEN_TYPE_ERROR;
 
     // parse the argument index
@@ -202,16 +203,18 @@ static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
     ctx->token_buffer[ctx->token_idx] = 0;
 
     enum ml_token_type found = hint ? *hint : ML_TOKEN_TYPE_ERROR;
-    if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF))
+    if (ctx->token_flags & (TOKEN_FLAG_CR | TOKEN_FLAG_LF)) {
+        ctx->token_flags &= ~TOKEN_FLAG_SKIP_LINE;
         found = ML_TOKEN_TYPE_LINE_TERMINATOR;
-    else if (ctx->token_flags & TOKEN_FLAG_SPACE)
+    } else if (ctx->token_flags & TOKEN_FLAG_SPACE) {
         found = ML_TOKEN_TYPE_SPACE;
-    else if (ctx->token_flags & TOKEN_FLAG_ARGUMENT)
+    } else if (ctx->token_flags & TOKEN_FLAG_ARGUMENT) {
         found = resolve_argument_token(ctx, result);
-    else if (ctx->token_flags & TOKEN_FLAG_NUMBER)
+    } else if (ctx->token_flags & TOKEN_FLAG_NUMBER) {
         found = resolve_number_token(ctx, result);
-    else if (ctx->token_flags & TOKEN_FLAG_ALPHABET)
+    } else if (ctx->token_flags & TOKEN_FLAG_ALPHABET) {
         found = resolve_name_token(ctx);
+    }
 
     if (found == ML_TOKEN_TYPE_ERROR)
         return raise_error(ctx, result);
@@ -254,22 +257,23 @@ static enum ml_token_type flush_token(struct ml_token_ctx *ctx,
 }
 
 enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_result *result) {
-    if (ctx->stop_reading)
-        return ML_TOKEN_TYPE_EOF;
-
     while (true) {
         // fill read buffer if it is empty
         if (ctx->read_idx >= ctx->read_count) {
-            int n = ctx->io_fns->read(ctx->io_opaque, ctx->read_buffer, ctx->read_capacity);
-            if (n <= 0) {
-                // block reading from the stream hereafter
-                ctx->stop_reading = true;
-
-                // flush the pending token
+            // the last chunk of data has been read
+            if (ctx->token_flags & TOKEN_FLAG_STOP_READING) {
+                // there may be one pending token
                 if (ctx->token_idx)
                     return finish_token(ctx, result, NULL);
                 return ML_TOKEN_TYPE_EOF;
             }
+
+            // block reading if it is the last chunk of data
+            int n = ctx->io_fns->read(ctx->io_opaque, ctx->read_buffer, ctx->read_capacity);
+            if (n <= 0)
+                ctx->token_flags |= TOKEN_FLAG_STOP_READING;
+
+            ctx->read_idx = 0;
             ctx->read_count = n;
         }
 
