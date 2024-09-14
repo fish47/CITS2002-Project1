@@ -8,9 +8,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 
-#define DEFAULT_READ_BUFFER_SIZE    1024
-#define DEFAULT_TOKEN_BUFFER_SIZE   64
-
 #define ML_KEYWORD_ARGUMENT     "arg"
 #define ML_KEYWORD_PRINT        "print"
 #define ML_KEYWORD_RETURN       "return"
@@ -57,15 +54,23 @@ static const struct ml_token_io_fns ml_token_io_fns_file = {
     .close = io_cb_close,
 };
 
+static const struct ml_token_ctx_init_args ml_token_ctx_init_args_default = {
+    .read_capacity = 1024,
+    .token_capacity = 64,
+};
+
 bool ml_token_ctx_init_file(struct ml_token_ctx **pp, const char *path) {
     FILE *file = fopen(path, "rb");
-    return file && ml_token_ctx_init_fns(pp, &ml_token_io_fns_file, file,
-                                         DEFAULT_READ_BUFFER_SIZE,
-                                         DEFAULT_TOKEN_BUFFER_SIZE);
+    return file && ml_token_ctx_init_fns(pp, file, &ml_token_io_fns_file, NULL);
 }
 
-bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fns *fns,
-                           void *opaque, int read_capacity, int token_capacity) {
+bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, void *opaque,
+                           const struct ml_token_io_fns *fns,
+                           const struct ml_token_ctx_init_args *args) {
+    const struct ml_token_ctx_init_args *p_args = args;
+    if (!p_args)
+        p_args = &ml_token_ctx_init_args_default;
+
     char *read_buffer = NULL;
     char *token_buffer = NULL;
     struct ml_token_ctx *ctx = NULL;
@@ -74,11 +79,11 @@ bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fn
     if (!ctx)
         goto fail;
 
-    read_buffer = ml_memory_malloc(read_capacity);
+    read_buffer = ml_memory_malloc(p_args->read_capacity);
     if (!read_buffer)
         goto fail;
 
-    token_buffer = ml_memory_malloc(token_capacity);
+    token_buffer = ml_memory_malloc(p_args->token_capacity);
     if (!token_buffer)
         goto fail;
 
@@ -88,10 +93,10 @@ bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fn
         .read_buffer = read_buffer,
         .read_idx = 0,
         .read_count = 0,
-        .read_capacity = read_capacity,
+        .read_capacity = p_args->read_capacity,
         .token_buffer = token_buffer,
         .token_idx = 0,
-        .token_capacity = token_capacity,
+        .token_capacity = p_args->token_capacity,
         .token_flags = 0,
     };
     *pp = ctx;

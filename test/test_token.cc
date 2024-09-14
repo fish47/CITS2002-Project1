@@ -42,7 +42,7 @@ public:
         str += " c d\n";
         str += "e";
 
-        CPPUNIT_ASSERT(Tokenizer(str.c_str(), 4).check({
+        CPPUNIT_ASSERT(Tokenizer(str.c_str(), {4, 1}).check({
             ML_TOKEN_TYPE_NAME,
             ML_TOKEN_TYPE_SPACE,
             ML_TOKEN_TYPE_ERROR,

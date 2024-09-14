@@ -4,6 +4,11 @@
 
 struct ml_token_ctx;
 
+struct ml_token_ctx_init_args {
+    int read_capacity;
+    int token_capacity;
+};
+
 struct ml_token_io_fns {
     int (*read)(void *opaque, char *buffer, int capacity);
     void (*close)(void *opaque);
@@ -43,8 +48,9 @@ enum ml_token_type {
 
 bool ml_token_ctx_init_file(struct ml_token_ctx **pp, const char *path);
 
-bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, const struct ml_token_io_fns *fns,
-                           void *opaque, int read_capacity, int token_capacity);
+bool ml_token_ctx_init_fns(struct ml_token_ctx **pp, void *opaque,
+                           const struct ml_token_io_fns *fns,
+                           const struct ml_token_ctx_init_args *args);
 
 void ml_token_ctx_uninit(struct ml_token_ctx **pp);
 

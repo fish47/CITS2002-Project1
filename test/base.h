@@ -32,7 +32,8 @@ private:
     static void doCloseString(void *opaque) {}
 
 public:
-    Tokenizer(const char *s, int read_capacity = 4, int token_capacity = 32);
+    Tokenizer(const char *s, const ml_token_ctx_init_args &args);
+    Tokenizer(const char *s) : Tokenizer(s, {4, 32}) {}
     ~Tokenizer();
     struct ml_token_ctx *cast() const { return ctx; }
     bool check(std::initializer_list<const char*> tokens);

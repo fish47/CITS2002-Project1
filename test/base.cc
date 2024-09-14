@@ -122,10 +122,9 @@ void BaseTextFixture::tearDown() {
     CPPUNIT_ASSERT(g_allocator.reset());
 }
 
-Tokenizer::Tokenizer(const char *s, int read_capacity, int token_capacity)
+Tokenizer::Tokenizer(const char *s, const ml_token_ctx_init_args &args)
     : text(s), count(std::strlen(s)) {
-    ml_token_ctx_init_fns(&ctx, &string_io_fns, this,
-                          read_capacity, token_capacity);
+    ml_token_ctx_init_fns(&ctx, this, &string_io_fns, &args);
 }
 
 Tokenizer::~Tokenizer() {
