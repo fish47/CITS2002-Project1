@@ -19,10 +19,16 @@ protected:
 
 class Tokenizer {
 private:
-    const char* const text ;
-    const int count;
+    using RawStringLines = std::vector<const char*>;
+
+private:
+    struct {
+        int offset = 0;
+        int count = 0;
+    } cursor;
     int index = 0;
     ml_token_ctx *ctx = nullptr;
+    const RawStringLines lines;
 
 private:
     static const ml_token_io_fns string_io_fns;
@@ -32,9 +38,15 @@ private:
     static void doCloseString(void *opaque) {}
 
 public:
-    Tokenizer(const char *s, const ml_token_ctx_init_args &args);
-    Tokenizer(const char *s) : Tokenizer(s, {4, 32}) {}
+    Tokenizer(RawStringLines &&lines, const ml_token_ctx_init_args &args);
+    Tokenizer(RawStringLines &&lines)
+        : Tokenizer(std::move(lines), {4, 32}) {}
+    Tokenizer(const char *s)
+        : Tokenizer(RawStringLines{s}) {}
+    Tokenizer(const char *s, const ml_token_ctx_init_args &args)
+        : Tokenizer(RawStringLines{s}, args) {}
     ~Tokenizer();
+
     struct ml_token_ctx *cast() const { return ctx; }
     bool check(std::initializer_list<const char*> tokens);
     bool check(std::initializer_list<enum ml_token_type> types);

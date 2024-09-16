@@ -122,8 +122,8 @@ void BaseTextFixture::tearDown() {
     CPPUNIT_ASSERT(g_allocator.reset());
 }
 
-Tokenizer::Tokenizer(const char *s, const ml_token_ctx_init_args &args)
-    : text(s), count(std::strlen(s)) {
+Tokenizer::Tokenizer(RawStringLines &&lines, const ml_token_ctx_init_args &args)
+    : lines(std::move(lines)) {
     ml_token_ctx_init_fns(&ctx, this, &string_io_fns, &args);
 }
 
@@ -133,10 +133,39 @@ Tokenizer::~Tokenizer() {
 
 int Tokenizer::doReadString(void *opaque, char *buffer, int capacity) {
     auto ctx = reinterpret_cast<Tokenizer*>(opaque);
-    int count = std::min(ctx->count - ctx->index, capacity);
+    if (ctx->index >= ctx->lines.size())
+        return 0;
+
+    // the length of current line is lazy-calculated
+    auto line = ctx->lines[ctx->index];
+    if (!ctx->cursor.count)
+        ctx->cursor.count = std::strlen(line);
+
+    // fill buffer with the remaining content
+    int count = std::min(ctx->cursor.count - ctx->cursor.offset, capacity);
     if (count)
-        std::memcpy(buffer, ctx->text + ctx->index, count);
-    ctx->index += count;
+        std::memcpy(buffer, line + ctx->cursor.offset, count);
+    ctx->cursor.offset += count;
+
+    // lines are separated by newline characters
+    if (ctx->cursor.offset == ctx->cursor.count) {
+        bool next = true;
+        if (ctx->index + 1 < ctx->lines.size())  {
+            if (count >= capacity) {
+                next = false;
+            } else {
+                // insert a newline when the line is read and the capacity is large enough
+                buffer[count++] = '\n';
+            }
+        }
+
+        if (next) {
+            ctx->index++;
+            ctx->cursor.offset = 0;
+            ctx->cursor.count = 0;
+        }
+    }
+
     return count;
 }
 
