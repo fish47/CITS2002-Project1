@@ -10,10 +10,30 @@ extern "C" {
 #include <string>
 #include <random>
 #include <algorithm>
+#include <initializer_list>
 
 namespace runml {
 
 class Compiler {
+public:
+    struct Function {
+        const char *name;
+        const std::vector<const char*> params;
+
+        Function(const char *n, std::vector<const char*> &&p)
+            : name(n), params(std::move(p)) {}
+
+        Function(const char *n, std::initializer_list<const char*> &&p = {})
+            : Function(n, std::vector<const char*>(p)) {}
+
+        bool operator==(const Function &rhs) const {
+            return std::strcmp(name, rhs.name) == 0
+                && params.size() == rhs.params.size()
+                && std::equal(params.cbegin(), params.cend(), rhs.params.cbegin(),
+                              [](const char *l, const char *r) { return std::strcmp(l, r) == 0; });
+        }
+    };
+
 private:
     ml_compile_ctx *ctx = nullptr;
 
@@ -26,61 +46,112 @@ public:
         ml_compile_ctx_uninit(&ctx);
     }
 
-    void feedLine(const char *str) {
-        Tokenizer(str).iterate([this](enum ml_token_type type, const ml_token_data &data) {
-            ml_compile_feed_token(ctx, type, &data);
-        });
-        ml_compile_feed_token(ctx, ML_TOKEN_TYPE_LINE_TERMINATOR, nullptr);
+    bool feedLines(std::vector<const char*>&& lines) {
+        Tokenizer t(std::move(lines));
+        return ml_compile_feed_tokens(ctx, t.cast());
     }
 
     template <typename F>
-    void iterateGlobalVarNames(F func) {
+    void iterateGlobalVariables(F op) {
         CPPUNIT_ASSERT(ctx);
         const char **names = nullptr;
-        const auto count = ml_compile_get_global_vars(ctx, &names);
+        const auto count = ml_compile_get_global_names(ctx, &names);
         for (int i = 0; i < count; i++)
-            func(names[i]);
+            op(names[i]);
+    }
+
+    int getFunctionCount() {
+        return ml_compile_get_func_count(ctx);
+    }
+
+    Function getFunctionAt(int i) {
+        CPPUNIT_ASSERT(i < getFunctionCount());
+        std::vector<const char*> params;
+        const char *name = ml_compile_get_func_name(ctx, i);
+        for (int j = 0, n = ml_compile_get_func_param_count(ctx, i); j < n; j++)
+            params.emplace_back(ml_compile_get_func_param_name(ctx, i, j));
+        return Function(name, std::move(params));
     }
 };
 
 class TestCompileStrings : public BaseTextFixture {
 
     CPPUNIT_TEST_SUITE(TestCompileStrings);
-    CPPUNIT_TEST(testCollectGloabVars);
+    CPPUNIT_TEST(testCollectGloabNames);
     CPPUNIT_TEST_SUITE_END();
 
 public:
-    void testCollectGloabVars() {
+    void testCollectGloabNames() {
         std::vector<std::string> names {"abc", "helen", "fish", "uwa"};
         std::sort(names.begin(), names.end());
 
-        std::vector<std::string> tmp;
+        std::vector<std::string> lines;
+        std::vector<std::string> globals;
+        std::vector<const char*> pointers;
         std::default_random_engine engine;
         for (int i = 0; i < 40; i++) {
             // make assignment statements
-            tmp.clear();
+            lines.clear();
             for (const auto &name : names) {
-                tmp.emplace_back();
-                tmp.back().append(name);
-                tmp.back().append(" <- 1\n");
+                lines.emplace_back();
+                lines.back().append(name);
+                lines.back().append(" <- 1");
             }
 
-            // shuffle and feed to the compiler
-            std::shuffle(tmp.begin(), tmp.end(), engine);
-            Compiler compiler;
-            for (const auto &line : tmp)
-                compiler.feedLine(line.c_str());
+            // shuffle assignment statements
+            std::shuffle(lines.begin(), lines.end(), engine);
 
-            // collect all names and check
-            tmp.clear();
-            compiler.iterateGlobalVarNames([&tmp](const char *name) { tmp.emplace_back(name); });
-            std::sort(tmp.begin(), tmp.end());
-            CPPUNIT_ASSERT(names == tmp);
+            // collect global names
+            Compiler c;
+            for (const auto& line : lines)
+                pointers.emplace_back(line.c_str());
+            pointers.emplace_back("");
+            CPPUNIT_ASSERT(c.feedLines(std::move(pointers)));
+
+            globals.clear();
+            c.iterateGlobalVariables([&globals](const char *name) { globals.emplace_back(name); });
+            std::sort(globals.begin(), globals.end());
+            CPPUNIT_ASSERT(names == globals);
         }
     }
 };
 
 
+class TestCompileFunction : public BaseTextFixture {
+
+    CPPUNIT_TEST_SUITE(TestCompileFunction);
+    CPPUNIT_TEST(testSignature);
+    CPPUNIT_TEST_SUITE_END();
+
+public:
+    void testSignature() {
+        const std::vector<const char*> signatures = {
+            "function zzzz",
+            "function z a b c",
+            "function za     ",
+            "function bc # Hello",
+            "function aab a b # Hello",
+        };
+        const std::vector<Compiler::Function> funcs({
+            {"zzzz"},
+            {"z", {"a", "b", "c"}},
+            {"za"},
+            {"bc"},
+            {"aab", {"a", "b"}},
+        });
+
+        Compiler c;
+        for (const auto &line : signatures)
+            CPPUNIT_ASSERT(c.feedLines({line, "\tvar <- 1", ""}));
+
+        CPPUNIT_ASSERT(c.getFunctionCount() == funcs.size());
+        for (int i = 0, n = funcs.size(); i < n; i++)
+            CPPUNIT_ASSERT(c.getFunctionAt(i) == funcs[i]);
+    }
+};
+
+
 CPPUNIT_TEST_SUITE_REGISTRATION(TestCompileStrings);
+CPPUNIT_TEST_SUITE_REGISTRATION(TestCompileFunction);
 
 }
