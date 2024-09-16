@@ -205,6 +205,8 @@ public:
         CPPUNIT_ASSERT(isInvalidToken("1abc"));
         CPPUNIT_ASSERT(isInvalidToken("a."));
         CPPUNIT_ASSERT(isInvalidToken(".b"));
+        CPPUNIT_ASSERT(isInvalidToken("ABC"));
+        CPPUNIT_ASSERT(isInvalidToken("[]"));
     }
 
     void testAssignmentOperator() {

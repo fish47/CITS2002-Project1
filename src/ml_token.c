@@ -404,10 +404,7 @@ enum ml_token_type ml_token_iterate(struct ml_token_ctx *ctx, struct ml_token_da
             } else if (c == ')') {
                 return flush_token(ctx, data, ML_TOKEN_TYPE_PARENTHESIS_R);
             } else {
-                if (ctx->token_idx)
-                    return raise_error(ctx, data);
-
-                ctx->read_idx++;
+                return raise_error(ctx, data);
             }
 
             // if something goes wrong, try to skip the whole line and see if it can be recovered
