@@ -46,7 +46,7 @@ public:
         ml_compile_ctx_uninit(&ctx);
     }
 
-    bool feedLines(std::vector<const char*>&& lines) {
+    enum ml_compile_result feedLines(std::vector<const char*>&& lines) {
         Tokenizer t(std::move(lines));
         return ml_compile_feed_tokens(ctx, t.cast());
     }
@@ -106,7 +106,7 @@ public:
             for (const auto& line : lines)
                 pointers.emplace_back(line.c_str());
             pointers.emplace_back("");
-            CPPUNIT_ASSERT(c.feedLines(std::move(pointers)));
+            CPPUNIT_ASSERT(c.feedLines(std::move(pointers)) == ML_COMPILE_RESULT_SUCCEED);
 
             globals.clear();
             c.iterateGlobalVariables([&globals](const char *name) { globals.emplace_back(name); });
@@ -120,11 +120,12 @@ public:
 class TestCompileFunction : public BaseTextFixture {
 
     CPPUNIT_TEST_SUITE(TestCompileFunction);
-    CPPUNIT_TEST(testSignature);
+    CPPUNIT_TEST(testNames);
+    CPPUNIT_TEST(testInvalid);
     CPPUNIT_TEST_SUITE_END();
 
 public:
-    void testSignature() {
+    void testNames() {
         const std::vector<const char*> signatures = {
             "function zzzz",
             "function z a b c",
@@ -142,11 +143,34 @@ public:
 
         Compiler c;
         for (const auto &line : signatures)
-            CPPUNIT_ASSERT(c.feedLines({line, "\tvar <- 1", ""}));
+            CPPUNIT_ASSERT(c.feedLines({line, "\tvar <- 1", ""}) == ML_COMPILE_RESULT_SUCCEED);
 
         CPPUNIT_ASSERT(c.getFunctionCount() == funcs.size());
         for (int i = 0, n = funcs.size(); i < n; i++)
             CPPUNIT_ASSERT(c.getFunctionAt(i) == funcs[i]);
+    }
+
+    void testInvalid() {
+        const std::vector<const char*> signatures = {
+            "function abc a b a",
+            "function abc a abc",
+            "function abc a b b",
+            "function #hello",
+            "function abc,",
+        };
+        const std::vector<enum ml_compile_result> results = {
+            ML_COMPILE_RESULT_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_NAME_COLLISION,
+            ML_COMPILE_RESULT_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_SYNTAX_ERROR,
+        };
+        CPPUNIT_ASSERT(signatures.size() == results.size());
+
+        for (int i = 0, n = signatures.size(); i < n; i++) {
+            const auto res = Compiler().feedLines({signatures[i], "\tvar <- 1", ""});
+            CPPUNIT_ASSERT(res == results[i]);
+        }
     }
 };
 

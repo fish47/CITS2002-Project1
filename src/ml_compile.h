@@ -9,6 +9,14 @@ struct ml_compile_ctx_init_args {
     int symbol_chars_capacity;
 };
 
+enum ml_compile_result {
+    ML_COMPILE_RESULT_SUCCEED,
+    ML_COMPILE_RESULT_SYNTAX_ERROR,
+    ML_COMPILE_RESULT_INVALID_TOKEN,
+    ML_COMPILE_RESULT_OUT_OF_MEMORY,
+    ML_COMPILE_RESULT_NAME_COLLISION,
+};
+
 struct ml_compile_ctx;
 
 bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
@@ -16,7 +24,8 @@ bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
 
 void ml_compile_ctx_uninit(struct ml_compile_ctx **pp);
 
-bool ml_compile_feed_tokens(struct ml_compile_ctx *ctx, struct ml_token_ctx *token);
+enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
+                                              struct ml_token_ctx *token);
 
 int ml_compile_get_global_names(struct ml_compile_ctx *ctx, const char ***names);
 

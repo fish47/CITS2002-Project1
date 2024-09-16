@@ -87,6 +87,7 @@ ML_LIST_DECLARE(struct symbol_entry, sym);
 
 struct feed_state {
     struct ml_token_ctx *ctx;
+    enum ml_compile_result error;
     enum ml_token_type type;
     struct ml_token_data data;
 };
@@ -107,6 +108,19 @@ static const struct ml_compile_ctx_init_args ml_compile_ctx_init_args_default = 
     .symbol_chars_capacity = 4096,
 };
 
+static bool fail_on_error(struct feed_state *state, enum ml_compile_result error) {
+    state->error = error;
+    return false;
+}
+
+static bool fail_on_no_memory(struct feed_state *state) {
+    return fail_on_error(state, ML_COMPILE_RESULT_OUT_OF_MEMORY);
+}
+
+static bool fail_on_syntax_error(struct feed_state *state) {
+    return fail_on_error(state, ML_COMPILE_RESULT_SYNTAX_ERROR);
+}
+
 static int symbol_find(struct ml_compile_ctx *ctx, const char *name) {
     int low = 0;
     int high = ctx->symbol_entries.count - 1;
@@ -125,15 +139,19 @@ static int symbol_find(struct ml_compile_ctx *ctx, const char *name) {
     return -(low + 1);
 }
 
-static bool symbol_mark(struct symbol_entry *entry, enum symbol_usage usage) {
+static bool symbol_mark(struct symbol_entry *entry,
+                        enum ml_compile_result *error,
+                        enum symbol_usage usage) {
     // only function parameter names can be reused
     // collisions between global variable names and functions name are not allowed
-    if (usage == SYMBOL_USAGE_KEEP)
+    if (usage == SYMBOL_USAGE_KEEP) {
         return true;
-    else if (entry->usage == SYMBOL_USAGE_NONE)
+    } else if (entry->usage == SYMBOL_USAGE_NONE) {
         goto pass;
-    else if (entry->usage != usage && entry->usage != SYMBOL_USAGE_FUNC_PARAM)
+    } else if (entry->usage != usage && entry->usage != SYMBOL_USAGE_FUNC_PARAM) {
+        *error = ML_COMPILE_RESULT_NAME_COLLISION;
         return false;
+    }
 pass:
     entry->usage = usage;
     return true;
@@ -144,16 +162,16 @@ static bool symbol_ensure(struct ml_compile_ctx *ctx, struct feed_state *state,
     int search_idx = symbol_find(ctx, state->data.buf);
     if (search_idx >= 0) {
         *idx = search_idx;
-        return symbol_mark(&ctx->symbol_entries.base[search_idx], usage);
+        return symbol_mark(&ctx->symbol_entries.base[search_idx], &state->error, usage);
     }
 
     // strings are zero-terminated and packed into a large chunk of memory
     // so the current end offset is the start offset of the string to be packed
     int offset = ctx->symbol_chars.count;
     if (!list_grow_sym(&ctx->symbol_entries, 1))
-        return false;
+        return fail_on_no_memory(state);
     if (!list_fill_str(&ctx->symbol_chars, state->data.buf, state->data.len + 1))
-        return false;
+        return fail_on_no_memory(state);
 
     // keep entries sorted based on the strings they point to
     int insert_idx = -search_idx - 1;
@@ -169,7 +187,7 @@ static bool symbol_ensure(struct ml_compile_ctx *ctx, struct feed_state *state,
     ctx->symbol_entries.count++;
 
     *idx = insert_idx;
-    return symbol_mark(&ctx->symbol_entries.base[insert_idx], usage);
+    return symbol_mark(&ctx->symbol_entries.base[insert_idx], &state->error, usage);
 }
 
 bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
@@ -253,7 +271,11 @@ int ml_compile_get_global_names(struct ml_compile_ctx *ctx, const char ***names)
 
 static bool feed_read_next(struct feed_state *state) {
     state->type = ml_token_iterate(state->ctx, &state->data);
-    return (state->type != ML_TOKEN_TYPE_ERROR);
+    if (state->type != ML_TOKEN_TYPE_ERROR)
+        return true;
+
+    state->error = ML_COMPILE_RESULT_INVALID_TOKEN;
+    return false;
 }
 
 static bool feed_skip_space(struct feed_state *state) {
@@ -270,7 +292,7 @@ static bool feed_skip_space(struct feed_state *state) {
 
 static bool feed_expect_next(struct feed_state *state, enum ml_token_type type) {
     state->type = ml_token_iterate(state->ctx, &state->data);
-    return state->type == type;
+    return (state->type == type) || fail_on_syntax_error(state);
 }
 
 static bool feed_expect_space_and_next(struct feed_state *state, enum ml_token_type type) {
@@ -299,30 +321,45 @@ static bool parse_function(struct ml_compile_ctx *ctx, struct feed_state *state)
                 return false;
             int param_str_offset = ctx->symbol_entries.base[param_sym_idx].offset;
             if (!list_append_int(&ctx->param_offsets, &param_str_offset))
-                return false;
+                return fail_on_no_memory(state);
             param_count++;
         } else if (state->type == ML_TOKEN_TYPE_COMMENT) {
             // ignore
         } else if (state->type == ML_TOKEN_TYPE_LINE_TERMINATOR) {
             break;
         } else {
-            return false;
+            return fail_on_syntax_error(state);
         }
     }
 
+    // ensure all parameters are unique
+    for (int i = 0; i < param_count; i++) {
+        for (int j = i + 1; j < param_count; j++) {
+            int offset_left = ctx->param_offsets.base[param_begin + i];
+            int offset_right = ctx->param_offsets.base[param_begin + j];
+            if (offset_left == offset_right)
+                return fail_on_syntax_error(state);
+        }
+    }
 
-    return list_append_func(&ctx->func_list, &(struct func_entry) {
+    const struct func_entry entry = {
         .name_offset = name_str_offset,
         .param_begin = param_begin,
         .param_count = param_count,
-    });
+    };
+    if (!list_append_func(&ctx->func_list, &entry))
+        return fail_on_no_memory(state);
+
+    return true;
 }
 
 static bool parse_assignment(struct ml_compile_ctx *ctx, struct feed_state *state, int sym_idx) {
     // the operand is considered a global variable unless it was declared as a function parameter
     struct symbol_entry *symbol = &ctx->symbol_entries.base[sym_idx];
-    if (symbol->usage == SYMBOL_USAGE_NONE)
-        symbol_mark(symbol, SYMBOL_USAGE_GLOBAL_VAR);
+    if (symbol->usage == SYMBOL_USAGE_NONE) {
+        if (!symbol_mark(symbol, &state->error, SYMBOL_USAGE_GLOBAL_VAR))
+            return false;
+    }
 
     //TODO expression parsing
     while (state->type != ML_TOKEN_TYPE_EOF && state->type != ML_TOKEN_TYPE_LINE_TERMINATOR) {
@@ -333,26 +370,36 @@ static bool parse_assignment(struct ml_compile_ctx *ctx, struct feed_state *stat
     return true;
 }
 
-bool ml_compile_feed_tokens(struct ml_compile_ctx *ctx, struct ml_token_ctx *token) {
-    struct feed_state state = {token};
+enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
+                                              struct ml_token_ctx *token) {
+    struct feed_state state = {
+        .ctx = token,
+        .error = ML_COMPILE_RESULT_SUCCEED,
+        .type = ML_TOKEN_TYPE_EOF,
+        .data = {0},
+    };
+
     while (true) {
         if (!feed_skip_space(&state))
-            return false;
+            return state.error;
 
-        bool succeed = true;
         if (state.type == ML_TOKEN_TYPE_NAME) {
             // may be an assignment statement or a function call
             int sym_idx = 0;
             if (!symbol_ensure(ctx, &state, SYMBOL_USAGE_KEEP, &sym_idx))
-                return false;
+                return state.error;
             if (!feed_skip_space(&state))
-                return false;
-            if (state.type == ML_TOKEN_TYPE_ASSIGNMENT)
-                succeed = parse_assignment(ctx, &state, sym_idx);
-            else
-                return false;
+                return state.error;
+
+            if (state.type == ML_TOKEN_TYPE_ASSIGNMENT) {
+                if (!parse_assignment(ctx, &state, sym_idx))
+                    return state.error;
+            } else {
+                return ML_COMPILE_RESULT_SYNTAX_ERROR;
+            }
         } else if (state.type == ML_TOKEN_TYPE_FUNCTION) {
-            succeed = parse_function(ctx, &state);
+            if (!parse_function(ctx, &state))
+                return state.error;
         } else if (state.type == ML_TOKEN_TYPE_TAB) {
             //TODO function body
         } else if (state.type == ML_TOKEN_TYPE_COMMENT) {
@@ -361,14 +408,13 @@ bool ml_compile_feed_tokens(struct ml_compile_ctx *ctx, struct ml_token_ctx *tok
             // the end of comments or empty lines
         } else if (state.type == ML_TOKEN_TYPE_EOF) {
             break;
+        } else if (state.type == ML_TOKEN_TYPE_ERROR) {
+            return ML_COMPILE_RESULT_INVALID_TOKEN;
         } else {
-            return false;
+            return ML_COMPILE_RESULT_SYNTAX_ERROR;
         }
-
-        if (!succeed)
-            return false;
     }
-    return true;
+    return ML_COMPILE_RESULT_SUCCEED;
 }
 
 int ml_compile_get_func_count(struct ml_compile_ctx *ctx) {
