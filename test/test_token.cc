@@ -16,6 +16,7 @@ class TestTokenBase : public BaseTextFixture {
     CPPUNIT_TEST(testStopIterate);
     CPPUNIT_TEST(testInitFail);
     CPPUNIT_TEST(testGrowBufferFail);
+    CPPUNIT_TEST(testClearInputData);
     CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -49,6 +50,24 @@ public:
             ML_TOKEN_TYPE_LINE_TERMINATOR,
             ML_TOKEN_TYPE_NAME,
         }));
+    }
+
+    void testClearInputData() {
+        Tokenizer t("a 123 b arg0x");
+        std::vector<float> values;
+        std::vector<std::string> names;
+        while (true) {
+            ml_token_data data {"haha", 4, 123};
+            auto type = ml_token_iterate(t.cast(), &data);
+            if (type == ML_TOKEN_TYPE_EOF)
+                break;
+            else if (type == ML_TOKEN_TYPE_SPACE)
+                continue;
+            values.emplace_back(data.value.real);
+            names.emplace_back(data.buf ? data.buf : "");
+        }
+        CPPUNIT_ASSERT(values == std::vector<float>({0, 123, 0, 0}));
+        CPPUNIT_ASSERT(names == std::vector<std::string>({"a", "123", "b", ""}));
     }
 };
 

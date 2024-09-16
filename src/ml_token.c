@@ -145,10 +145,8 @@ static void clear_token(struct ml_token_ctx *ctx) {
 }
 
 static enum ml_token_type raise_error(struct ml_token_ctx *ctx, struct ml_token_data *data) {
-    if (data) {
-        data->buf = NULL;
-        data->len = 0;
-    }
+    if (data)
+        *data = (struct ml_token_data) {0};
     clear_token(ctx);
     ctx->read_idx++;
     ctx->token_flags |= TOKEN_FLAG_SKIP_LINE;
@@ -205,6 +203,9 @@ static enum ml_token_type resolve_argument_token(struct ml_token_ctx *ctx,
 static enum ml_token_type finish_token(struct ml_token_ctx *ctx,
                                        struct ml_token_data *data,
                                        enum ml_token_type *hint) {
+    if (data)
+        *data = (struct ml_token_data) {0};
+
     // the token is zero-terminated string now
     ctx->token_buffer[ctx->token_idx] = 0;
 
