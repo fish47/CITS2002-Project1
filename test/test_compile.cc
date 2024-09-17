@@ -119,25 +119,30 @@ public:
 class TestCompileFunction : public BaseTextFixture {
 
     CPPUNIT_TEST_SUITE(TestCompileFunction);
-    CPPUNIT_TEST(testNames);
-    CPPUNIT_TEST(testInvalid);
+    CPPUNIT_TEST(testParamCount);
+    CPPUNIT_TEST(testParamName);
+    CPPUNIT_TEST(testWrongReturn);
+    CPPUNIT_TEST(testFinshBody);
+    CPPUNIT_TEST(testEmptyBody);
+    CPPUNIT_TEST(testRedundantTab);
+    CPPUNIT_TEST(testNameCollision);
     CPPUNIT_TEST_SUITE_END();
 
 public:
-    void testNames() {
+    void testParamCount() {
         const std::vector<RawString> signatures({
             "function zzzz",
             "function z a b c",
             "function za     ",
             "function bc # Hello",
-            "function aab a b # Hello",
+            "function aab x y # Hello",
         });
         const std::vector<Compiler::Function> funcs({
             {"zzzz"},
             {"z", {"a", "b", "c"}},
             {"za"},
             {"bc"},
-            {"aab", {"a", "b"}},
+            {"aab", {"x", "y"}},
         });
 
         Compiler c;
@@ -149,20 +154,20 @@ public:
             CPPUNIT_ASSERT(c.getFunctionAt(i) == funcs[i]);
     }
 
-    void testInvalid() {
+    void testParamName() {
         const std::vector<RawString> signatures({
             "function abc a b a",
-            "function abc a abc",
             "function abc a b b",
             "function #hello",
             "function abc,",
+            "function func a b var",
         });
         const std::vector<enum ml_compile_result> results({
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
-            ML_COMPILE_RESULT_ERROR_NAME_COLLISION,
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_SUCCEED,
         });
         CPPUNIT_ASSERT(signatures.size() == results.size());
 
@@ -170,6 +175,160 @@ public:
             const auto res = Compiler().feedLines({signatures[i], "\tvar <- 1", ""});
             CPPUNIT_ASSERT(res == results[i]);
         }
+    }
+
+    void testWrongReturn() {
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "return bar",
+        }) == ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function foo",
+            "\t tmp <- 1",
+            "bar <- 1",
+            "return bar  # what",
+        }) == ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function foo",
+            "\t tmp <- 1",
+            "\t return ok",
+            "\t return again",
+        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_RETURN);
+    }
+
+    void testFinshBody() {
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function foo",
+            "\t print bar",
+            "\t function bar",
+        }) == ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function foo",
+            "# comment1",
+            "# comment2",
+            "\t function bar",
+        }) == ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function foo",
+            "# comment1",
+            "# comment2",
+            "\t print bar",
+        }) == ML_COMPILE_RESULT_SUCCEED);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function x a b c",
+            "\t print a",
+            "function y a b c",
+            "\t print b",
+        }) == ML_COMPILE_RESULT_SUCCEED);
+    }
+
+    void testEmptyBody() {
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "a <- 1",
+            "function abc",
+            "# comment1",
+            "# comment2",
+            "a <- haha",
+        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "a <- 1",
+            "function abc",
+        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "a <- 1",
+            "function abc",
+            "",
+        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "a <- 1",
+            "function abc",
+            "# haha",
+            "# haha",
+        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+    }
+
+    void testRedundantTab() {
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function abc",
+            "# haha",
+            "# haha",
+            "\t\t  a <- 1",
+        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function abc",
+            "\t",
+        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function abc",
+            " \t # haha",
+        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+    }
+
+    void testNameCollision() {
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function var a b c",
+            "\t var <- 1",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function abc a abc",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "global <- 1",
+            "function global a b c",
+            "\t var <- 1",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "global <- 1",
+            "function func a b c global",
+            "\t var <- 1",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function func a b c",
+            "\t func <- 1",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function func a b c",
+            "\t var <- a + b + c + func",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "var <- global",
+            "function func a b c",
+            "\t var <- global  ()  # haha",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function func a b c",
+            "\t var <- 1",
+            "bar <- func(1, 2, a)",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function x",
+            "\t var <- 1",
+            "function y",
+            "\t var <- x(1, y)",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+
+        CPPUNIT_ASSERT(Compiler().feedLines({
+            "function x var",
+            "\t var <- 1",
+            "print x(1, y, var)",
+        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
     }
 };
 

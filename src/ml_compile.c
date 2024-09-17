@@ -1,6 +1,7 @@
 #include "ml_compile.h"
 #include "ml_memory.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #define ML_LIST_DECLARE(type, name)                                         \
@@ -67,15 +68,41 @@ enum symbol_usage {
     SYMBOL_USAGE_FUNC_PARAM,
 };
 
+enum symbol_resolve_hint {
+    SYMBOL_RESOLVE_HINT_NONE,
+    SYMBOL_RESOLVE_HINT_VAR,
+};
+
 struct symbol_entry {
     int offset;
     enum symbol_usage usage;
 };
 
+enum token_entry_type {
+    TOKEN_ENTRY_TYPE_PLAIN,
+    TOKEN_ENTRY_TYPE_SYMBOL,
+    TOKEN_ENTRY_TYPE_NUMBER,
+    TOKEN_ENTRY_TYPE_ARGUMENT,
+    TOKEN_ENTRY_TYPE_TERMINATOR,
+};
+
+struct token_entry {
+    enum token_entry_type type;
+    union {
+        int index;
+        int offset;
+        double number;
+        enum ml_token_type type;
+    } data;
+};
+
 struct func_entry {
+    bool has_return;
     int name_offset;
     int param_begin;
-    int param_count;
+    int param_end;
+    int token_begin;
+    int token_end;
 };
 
 // we have to use macros because generics are not supported in C language
@@ -84,6 +111,7 @@ ML_LIST_DECLARE(int, int);
 ML_LIST_DECLARE(char, str);
 ML_LIST_DECLARE(struct func_entry, func);
 ML_LIST_DECLARE(struct symbol_entry, sym);
+ML_LIST_DECLARE(struct token_entry, token);
 
 struct feed_state {
     struct ml_token_ctx *ctx;
@@ -92,12 +120,35 @@ struct feed_state {
     struct ml_token_data data;
 };
 
+enum compile_flag {
+    COMPILE_FLAG_HAS_TAB = 1,
+    COMPILE_FLAG_IN_FUNC_BODY = 1 << 1,
+};
+
+enum check_line_type {
+    CHECK_LINE_TYPE_EOF,
+    CHECK_LINE_TYPE_EMPTY,
+    CHECK_LINE_TYPE_RETURN,
+    CHECK_LINE_TYPE_FUNCTION,
+    CHECK_LINE_TYPE_STATEMENT,
+};
+
+enum parse_expr_flag {
+    PARSE_EXPR_FLAG_SKIP_FIRST_READ = 1,
+    PARSE_EXPR_FLAG_CHECK_FUNC_SYMBOL = 1 << 1,
+};
+
 struct ml_compile_ctx {
+    uint32_t compile_flags;
+
     struct ml_list_str symbol_chars;
     struct ml_list_sym symbol_entries;
 
     struct ml_list_func func_list;
     struct ml_list_int param_offsets;
+
+    struct ml_list_token tokens_main;
+    struct ml_list_token tokens_sub;
 
     void *result_holder;
     size_t result_capacity;
@@ -148,7 +199,7 @@ static bool symbol_mark(struct symbol_entry *entry,
         return true;
     } else if (entry->usage == SYMBOL_USAGE_NONE) {
         goto pass;
-    } else if (entry->usage != usage && entry->usage != SYMBOL_USAGE_FUNC_PARAM) {
+    } else if (entry->usage != usage) {
         *error = ML_COMPILE_RESULT_ERROR_NAME_COLLISION;
         return false;
     }
@@ -158,11 +209,11 @@ pass:
 }
 
 static bool symbol_ensure(struct ml_compile_ctx *ctx, struct feed_state *state,
-                          enum symbol_usage usage, int *idx) {
+                          enum symbol_usage usage, struct symbol_entry **entry) {
     int search_idx = symbol_find(ctx, state->data.buf);
     if (search_idx >= 0) {
-        *idx = search_idx;
-        return symbol_mark(&ctx->symbol_entries.base[search_idx], &state->error, usage);
+        *entry = &ctx->symbol_entries.base[search_idx];
+        return symbol_mark(*entry, &state->error, usage);
     }
 
     // strings are zero-terminated and packed into a large chunk of memory
@@ -186,8 +237,44 @@ static bool symbol_ensure(struct ml_compile_ctx *ctx, struct feed_state *state,
     };
     ctx->symbol_entries.count++;
 
-    *idx = insert_idx;
-    return symbol_mark(&ctx->symbol_entries.base[insert_idx], &state->error, usage);
+    *entry = &ctx->symbol_entries.base[insert_idx];
+    return symbol_mark(*entry, &state->error, usage);
+}
+
+static enum symbol_usage symbol_resolve(struct ml_compile_ctx *ctx,
+                                        struct symbol_entry *entry,
+                                        const enum ml_token_type *next,
+                                        enum symbol_resolve_hint hint) {
+    bool var_hint = false;
+    if (next) {
+        // it should be a function call
+        if (*next == ML_TOKEN_TYPE_PARENTHESIS_L)
+            return SYMBOL_USAGE_FUNC_NAME;
+        var_hint = true;
+    }
+
+    if (var_hint || hint == SYMBOL_RESOLVE_HINT_VAR) {
+        // it must be a global variable
+        if (!(ctx->compile_flags & COMPILE_FLAG_IN_FUNC_BODY))
+            return SYMBOL_USAGE_GLOBAL_VAR;
+
+        switch (entry->usage) {
+            // it has been definied
+            case SYMBOL_USAGE_GLOBAL_VAR:
+            case SYMBOL_USAGE_FUNC_PARAM:
+                return entry->usage;
+
+            // it may be function name, but it will fail later
+            default:
+                return SYMBOL_USAGE_GLOBAL_VAR;
+        }
+    }
+
+    // follow the previous definition
+    if (entry->usage != SYMBOL_USAGE_NONE)
+        return entry->usage;
+
+    return SYMBOL_USAGE_GLOBAL_VAR;
 }
 
 bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
@@ -209,6 +296,10 @@ bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
         goto fail;
     if (!list_init_int(&ctx->param_offsets, p_args->list_default_capacity))
         goto fail;
+    if (!list_init_token(&ctx->tokens_main, p_args->list_default_capacity))
+        goto fail;
+    if (!list_init_token(&ctx->tokens_sub, p_args->list_default_capacity))
+        goto fail;
 
     *pp = ctx;
     return true;
@@ -227,6 +318,8 @@ void ml_compile_ctx_uninit(struct ml_compile_ctx **pp) {
     list_uninit_sym(&ctx->symbol_entries);
     list_uninit_func(&ctx->func_list);
     list_uninit_int(&ctx->param_offsets);
+    list_uninit_token(&ctx->tokens_main);
+    list_uninit_token(&ctx->tokens_sub);
     if (ctx->result_holder)
         ml_memory_free(ctx->result_holder);
     ml_memory_free(ctx);
@@ -299,33 +392,97 @@ static bool feed_expect_space_and_next(struct feed_state *state, enum ml_token_t
     return feed_expect_next(state, ML_TOKEN_TYPE_SPACE) && feed_expect_next(state, type);
 }
 
+static struct ml_list_token *resolve_token_list(struct ml_compile_ctx *ctx) {
+    return (ctx->compile_flags & COMPILE_FLAG_HAS_TAB) ? &ctx->tokens_sub : &ctx->tokens_main;
+}
+
+static bool do_check_line_start(enum check_line_type type,
+                                struct ml_compile_ctx *ctx,
+                                struct feed_state *state) {
+    bool in_func = (ctx->compile_flags & COMPILE_FLAG_IN_FUNC_BODY);
+    bool has_tab = (ctx->compile_flags & COMPILE_FLAG_HAS_TAB);
+
+    if (type == CHECK_LINE_TYPE_RETURN && !in_func)
+        return fail_on_error(state, ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN);
+
+    if (type == CHECK_LINE_TYPE_EMPTY && has_tab)
+        return fail_on_error(state, ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+
+    if (type == CHECK_LINE_TYPE_FUNCTION && in_func && has_tab)
+        return fail_on_error(state, ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION);
+
+    // a non-empty line without indents can finish the function body
+    if (in_func && !has_tab && (type != CHECK_LINE_TYPE_EMPTY)) {
+        // the first statement without a indenfirst valid t means finishing the last function
+        ctx->compile_flags &= ~COMPILE_FLAG_IN_FUNC_BODY;
+
+        // check empty function
+        struct func_entry *func = &ctx->func_list.base[ctx->func_list.count - 1];
+        if (func->token_begin == func->token_end)
+            return fail_on_error(state, ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+    }
+
+    return true;
+}
+
+static bool do_check_line_end(enum check_line_type type,
+                              struct ml_compile_ctx *ctx,
+                              struct feed_state *state) {
+    bool in_func = (ctx->compile_flags & COMPILE_FLAG_IN_FUNC_BODY);
+    bool has_tab = (ctx->compile_flags & COMPILE_FLAG_HAS_TAB);
+    struct func_entry *func = in_func ? &ctx->func_list.base[ctx->func_list.count - 1] : NULL;
+
+    // append a valid statement to the current function's token list
+    if (in_func && has_tab)
+        func->token_end = ctx->tokens_sub.count;
+
+    if (type == CHECK_LINE_TYPE_RETURN) {
+        if (func->has_return)
+            return fail_on_error(state, ML_COMPILE_RESULT_ERROR_REDUNDANT_RETURN);
+        func->has_return = true;
+    }
+
+    // the following lines may be statements of the last function
+    if (type == CHECK_LINE_TYPE_FUNCTION)
+        ctx->compile_flags |= COMPILE_FLAG_IN_FUNC_BODY;
+
+    // a tab only works for its line
+    ctx->compile_flags &= ~COMPILE_FLAG_HAS_TAB;
+    return true;
+}
+
 static bool parse_function(struct ml_compile_ctx *ctx, struct feed_state *state) {
+    if (!do_check_line_start(CHECK_LINE_TYPE_FUNCTION, ctx, state))
+        return false;
+
     // function name
     if (!feed_expect_space_and_next(state, ML_TOKEN_TYPE_NAME))
         return false;
 
-    int name_sym_idx = 0;
-    if (!symbol_ensure(ctx, state, SYMBOL_USAGE_FUNC_NAME, &name_sym_idx))
+    struct symbol_entry *symbol_name = NULL;
+    if (!symbol_ensure(ctx, state, SYMBOL_USAGE_FUNC_NAME, &symbol_name))
         return false;
 
-    int param_count = 0;
+    // symbol entry may be invalid after modification, so save the information here
+    int name_offset = symbol_name->offset;
+
     int param_begin = ctx->param_offsets.count;
-    int name_str_offset = ctx->symbol_entries.base[name_sym_idx].offset;
     while (true) {
         if (!feed_skip_space(state))
             return false;
 
         if (state->type == ML_TOKEN_TYPE_NAME) {
-            int param_sym_idx = 0;
-            if (!symbol_ensure(ctx, state, SYMBOL_USAGE_FUNC_PARAM, &param_sym_idx))
+            struct symbol_entry *symbol_param = NULL;
+            if (!symbol_ensure(ctx, state, SYMBOL_USAGE_FUNC_PARAM, &symbol_param))
                 return false;
-            int param_str_offset = ctx->symbol_entries.base[param_sym_idx].offset;
-            if (!list_append_int(&ctx->param_offsets, &param_str_offset))
+            const int param_offset = symbol_param->offset;
+            if (!list_append_int(&ctx->param_offsets, &param_offset))
                 return fail_on_no_memory(state);
-            param_count++;
         } else if (state->type == ML_TOKEN_TYPE_COMMENT) {
             // ignore
         } else if (state->type == ML_TOKEN_TYPE_LINE_TERMINATOR) {
+            break;
+        } else if (state->type == ML_TOKEN_TYPE_EOF) {
             break;
         } else {
             return fail_on_syntax_error(state);
@@ -333,39 +490,235 @@ static bool parse_function(struct ml_compile_ctx *ctx, struct feed_state *state)
     }
 
     // ensure all parameters are unique
-    for (int i = 0; i < param_count; i++) {
-        for (int j = i + 1; j < param_count; j++) {
-            int offset_left = ctx->param_offsets.base[param_begin + i];
-            int offset_right = ctx->param_offsets.base[param_begin + j];
-            if (offset_left == offset_right)
+    int param_end = ctx->param_offsets.count;
+    for (int i = param_begin; i < param_end; i++) {
+        for (int j = i + 1; j < param_end; j++) {
+            if (ctx->param_offsets.base[i] == ctx->param_offsets.base[j])
                 return fail_on_syntax_error(state);
         }
     }
 
     const struct func_entry entry = {
-        .name_offset = name_str_offset,
+        .has_return = false,
+        .name_offset = name_offset,
         .param_begin = param_begin,
-        .param_count = param_count,
+        .param_end = param_end,
+        .token_begin = ctx->tokens_sub.count,
+        .token_end = ctx->tokens_sub.count,
     };
     if (!list_append_func(&ctx->func_list, &entry))
+        return fail_on_no_memory(state);
+
+    if (!do_check_line_end(CHECK_LINE_TYPE_FUNCTION, ctx, state))
+        return false;
+
+    return true;
+}
+
+static bool parse_do_check_func_symbol(enum symbol_usage usage,
+                                       struct feed_state *state,
+                                       bool *check) {
+    if (*check) {
+        // just do it once
+        *check = false;
+        if (usage != SYMBOL_USAGE_FUNC_NAME)
+            return fail_on_syntax_error(state);
+    }
+    return true;
+}
+
+static bool parse_do_append_symbol_token(struct ml_compile_ctx *ctx,
+                                         struct feed_state *state,
+                                         bool *check_func,
+                                         struct symbol_entry **symbol,
+                                         const enum ml_token_type *next,
+                                         enum symbol_resolve_hint hint) {
+    if (!*symbol)
+        return true;
+
+    enum symbol_usage usage = symbol_resolve(ctx, *symbol, next, hint);
+    if (!symbol_mark(*symbol, &state->error, usage))
+        return false;
+
+    // the first symbol is supposed to be a function name
+    if (*check_func) {
+        *check_func = false;
+        if (usage != SYMBOL_USAGE_FUNC_NAME)
+            return fail_on_syntax_error(state);
+    }
+
+    // flush the pending symbol
+    const struct token_entry token = {
+        .type = TOKEN_ENTRY_TYPE_SYMBOL,
+        .data = { .offset = (*symbol)->offset },
+    };
+    if (!list_append_token(resolve_token_list(ctx), &token))
+        return fail_on_no_memory(state);
+
+    *symbol = NULL;
+    return true;
+}
+
+static bool parse_expression(struct ml_compile_ctx *ctx, struct feed_state *state,
+                             struct symbol_entry *sym, uint32_t flags) {
+    bool check_func = (flags & PARSE_EXPR_FLAG_CHECK_FUNC_SYMBOL);
+    struct symbol_entry *symbol = sym;
+    struct ml_list_token *tokens = resolve_token_list(ctx);
+
+    if (!(flags & PARSE_EXPR_FLAG_SKIP_FIRST_READ)) {
+        if (!feed_skip_space(state))
+            return false;
+    }
+
+    while (true) {
+        bool skip = false;
+        bool stop = false;
+        bool valid = false;
+        struct token_entry token;
+        switch (state->type) {
+            case ML_TOKEN_TYPE_EOF:
+            case ML_TOKEN_TYPE_LINE_TERMINATOR:
+                stop = true;
+                break;
+
+            case ML_TOKEN_TYPE_ARGUMENT:
+                //TODO only available in main function?
+                valid = true;
+                token = (struct token_entry) {
+                    .type = TOKEN_ENTRY_TYPE_ARGUMENT,
+                    .data = { .index = state->data.value.index },
+                };
+                break;
+
+            case ML_TOKEN_TYPE_NUMBER:
+                valid = true;
+                token = (struct token_entry) {
+                    .type = TOKEN_ENTRY_TYPE_NUMBER,
+                    .data = { .number = state->data.value.number },
+                };
+                break;
+
+            case ML_TOKEN_TYPE_NAME:
+                // successive variables
+                if (symbol)
+                    return fail_on_syntax_error(state);
+
+                // may be a variable or a function call
+                if (!symbol_ensure(ctx, state, SYMBOL_USAGE_KEEP, &symbol))
+                    return false;
+
+                skip = true;
+                valid = true;
+                break;
+
+            case ML_TOKEN_TYPE_ERROR:
+            case ML_TOKEN_TYPE_PRINT:
+            case ML_TOKEN_TYPE_TAB:
+            case ML_TOKEN_TYPE_RETURN:
+            case ML_TOKEN_TYPE_FUNCTION:
+            case ML_TOKEN_TYPE_ASSIGNMENT:
+                // these should not appear in statements
+                return fail_on_syntax_error(state);
+
+            case ML_TOKEN_TYPE_COMMENT:
+            case ML_TOKEN_TYPE_SPACE:
+                skip = true;
+                break;
+
+            case ML_TOKEN_TYPE_PLUS:
+            case ML_TOKEN_TYPE_MINUS:
+            case ML_TOKEN_TYPE_MULTIPLY:
+            case ML_TOKEN_TYPE_DIVIDE:
+            case ML_TOKEN_TYPE_COMMA:
+            case ML_TOKEN_TYPE_PARENTHESIS_L:
+            case ML_TOKEN_TYPE_PARENTHESIS_R:
+                valid = true;
+                token = (struct token_entry) {
+                    .type = TOKEN_ENTRY_TYPE_PLAIN,
+                    .data = { .type = state->type },
+                };
+                break;
+        }
+
+        if (stop)
+            break;
+
+        // read the token for the next round
+        if (!feed_skip_space(state))
+            return false;
+
+        if (skip)
+            continue;
+
+        if (!valid)
+            return fail_on_syntax_error(state);
+
+        // the symbol usage can be determined after getting one more token
+        const enum ml_token_type next = token.data.type;
+        if (!parse_do_append_symbol_token(ctx, state, &check_func, &symbol, &next, SYMBOL_RESOLVE_HINT_NONE))
+            return false;
+
+        if (!list_append_token(tokens, &token))
+            return fail_on_no_memory(state);
+    }
+
+    // the last or the only one variable in the expression
+    if (!parse_do_append_symbol_token(ctx, state, &check_func, &symbol, NULL, SYMBOL_RESOLVE_HINT_VAR))
+        return false;
+
+    const struct token_entry end = { .type = TOKEN_ENTRY_TYPE_TERMINATOR };
+    if (!list_append_token(tokens, &end))
         return fail_on_no_memory(state);
 
     return true;
 }
 
-static bool parse_assignment(struct ml_compile_ctx *ctx, struct feed_state *state, int sym_idx) {
-    // the operand is considered a global variable unless it was declared as a function parameter
-    struct symbol_entry *symbol = &ctx->symbol_entries.base[sym_idx];
-    if (symbol->usage == SYMBOL_USAGE_NONE) {
-        if (!symbol_mark(symbol, &state->error, SYMBOL_USAGE_GLOBAL_VAR))
-            return false;
-    }
+static bool parse_assignment(struct ml_compile_ctx *ctx,
+                             struct feed_state *state,
+                             int operand_offset) {
+    // left operand
+    struct ml_list_token *tokens = resolve_token_list(ctx);
+    const struct token_entry operand = {
+        .type = TOKEN_ENTRY_TYPE_SYMBOL,
+        .data = { .offset = operand_offset },
+    };
+    if (!list_append_token(tokens, &operand))
+        return fail_on_no_memory(state);
 
-    //TODO expression parsing
-    while (state->type != ML_TOKEN_TYPE_EOF && state->type != ML_TOKEN_TYPE_LINE_TERMINATOR) {
-        if (!feed_read_next(state))
-            return false;
-    }
+    // assignment operator
+    const struct token_entry assignment = {
+        .type = TOKEN_ENTRY_TYPE_PLAIN,
+        .data = { .type = ML_TOKEN_TYPE_ASSIGNMENT },
+    };
+    if (!list_append_token(tokens, &assignment))
+        return fail_on_no_memory(state);
+
+    // right statement
+    if (!parse_expression(ctx, state, NULL, 0))
+        return false;
+
+    return true;
+}
+
+static bool parse_instruction(struct ml_compile_ctx *ctx,
+                              struct feed_state *state,
+                              enum check_line_type type) {
+    if (!do_check_line_start(type, ctx, state))
+        return false;
+
+    const struct token_entry token = {
+        .type = TOKEN_ENTRY_TYPE_PLAIN,
+        .data = { .type = state->type },
+    };
+    struct ml_list_token *tokens = resolve_token_list(ctx);
+    if (!list_append_token(tokens, &token))
+        return fail_on_no_memory(state);
+
+    if (!parse_expression(ctx, state, NULL, 0))
+        return false;
+
+    if (!do_check_line_end(type, ctx, state))
+        return false;
 
     return true;
 }
@@ -379,35 +732,81 @@ enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
         .data = {0},
     };
 
+    bool is_comment_line = false;
     while (true) {
         if (!feed_skip_space(&state))
             return state.error;
 
         if (state.type == ML_TOKEN_TYPE_NAME) {
-            // may be an assignment statement or a function call
-            int sym_idx = 0;
-            if (!symbol_ensure(ctx, &state, SYMBOL_USAGE_KEEP, &sym_idx))
+            if (!do_check_line_start(CHECK_LINE_TYPE_STATEMENT, ctx, &state))
+                return state.error;
+
+            // it may be a variable or function call
+            struct symbol_entry *symbol = NULL;
+            if (!symbol_ensure(ctx, &state, SYMBOL_USAGE_KEEP, &symbol))
                 return state.error;
             if (!feed_skip_space(&state))
                 return state.error;
 
             if (state.type == ML_TOKEN_TYPE_ASSIGNMENT) {
-                if (!parse_assignment(ctx, &state, sym_idx))
+                // it should be a variable if it is followed by an assignment operator
+                enum symbol_usage usage = symbol_resolve(ctx, symbol, NULL, SYMBOL_RESOLVE_HINT_VAR);
+                if (!symbol_mark(symbol, &state.error, usage))
+                    return state.error;
+                if (!parse_assignment(ctx, &state, symbol->offset))
                     return state.error;
             } else {
-                return ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR;
+                // it should be a function call
+                uint32_t flags = PARSE_EXPR_FLAG_SKIP_FIRST_READ | PARSE_EXPR_FLAG_CHECK_FUNC_SYMBOL;
+                if (!parse_expression(ctx, &state, symbol, flags))
+                    return state.error;
             }
+
+            if (!do_check_line_end(CHECK_LINE_TYPE_STATEMENT, ctx, &state))
+                return state.error;
         } else if (state.type == ML_TOKEN_TYPE_FUNCTION) {
             if (!parse_function(ctx, &state))
                 return state.error;
+        } else if (state.type == ML_TOKEN_TYPE_PRINT) {
+            if (!parse_instruction(ctx, &state, CHECK_LINE_TYPE_STATEMENT))
+                return state.error;
+        } else if (state.type == ML_TOKEN_TYPE_RETURN) {
+            if (!parse_instruction(ctx, &state, CHECK_LINE_TYPE_RETURN))
+                return state.error;
         } else if (state.type == ML_TOKEN_TYPE_TAB) {
-            //TODO function body
+            // no more than one tab
+            if (ctx->compile_flags & COMPILE_FLAG_HAS_TAB)
+                return ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB;
+            ctx->compile_flags |= COMPILE_FLAG_HAS_TAB;
         } else if (state.type == ML_TOKEN_TYPE_COMMENT) {
-            // ignore
+            // a line that starts with a comment
+            is_comment_line = true;
+            if (!do_check_line_start(CHECK_LINE_TYPE_EMPTY, ctx, &state))
+                return state.error;
         } else if (state.type == ML_TOKEN_TYPE_LINE_TERMINATOR) {
             // the end of comments or empty lines
+            is_comment_line = false;
+            if (!do_check_line_end(CHECK_LINE_TYPE_EMPTY, ctx, &state))
+                return state.error;
         } else if (state.type == ML_TOKEN_TYPE_EOF) {
-            break;
+            if (is_comment_line) {
+                // the last line is a comment without a line terminator
+                is_comment_line = false;
+                if (!do_check_line_end(CHECK_LINE_TYPE_EMPTY, ctx, &state))
+                    return state.error;
+            } else {
+                // if a tab in the last line, finish it first
+                bool has_tab = (ctx->compile_flags & COMPILE_FLAG_HAS_TAB);
+                enum check_line_type type = has_tab ? CHECK_LINE_TYPE_EMPTY : CHECK_LINE_TYPE_EOF;
+                if (!do_check_line_start(type, ctx, &state))
+                    return state.error;
+                if (!do_check_line_end(type, ctx, &state))
+                    return state.error;
+
+                // synthesize a pure EOF line for cleanup and check
+                if (!has_tab)
+                    break;
+            }
         } else if (state.type == ML_TOKEN_TYPE_ERROR) {
             return ML_COMPILE_RESULT_ERROR_INVALID_TOKEN;
         } else {
@@ -426,7 +825,7 @@ const char *ml_compile_get_func_name(struct ml_compile_ctx *ctx, int i) {
 }
 
 int ml_compile_get_func_param_count(struct ml_compile_ctx *ctx, int i) {
-    return ctx->func_list.base[i].param_count;
+    return ctx->func_list.base[i].param_end - ctx->func_list.base[i].param_begin;
 }
 
 const char *ml_compile_get_func_param_name(struct ml_compile_ctx *ctx, int i, int j) {
