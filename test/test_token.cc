@@ -17,6 +17,7 @@ class TestTokenBase : public BaseTextFixture {
     CPPUNIT_TEST(testInitFail);
     CPPUNIT_TEST(testGrowBufferFail);
     CPPUNIT_TEST(testClearInputData);
+    CPPUNIT_TEST(testNullInputData);
     CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -68,6 +69,15 @@ public:
         }
         CPPUNIT_ASSERT(values == std::vector<float>({0, 123, 0, 0}));
         CPPUNIT_ASSERT(names == std::vector<std::string>({"a", "123", "b", ""}));
+    }
+
+    void testNullInputData() {
+        Tokenizer t("arg0 123 +-<- #\nabc");
+        while (true) {
+            auto type = ml_token_iterate(t.cast(), nullptr);
+            if (type == ML_TOKEN_TYPE_EOF)
+                break;
+        }
     }
 };
 

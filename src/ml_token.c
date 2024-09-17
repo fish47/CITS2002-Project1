@@ -174,7 +174,8 @@ static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
     if (errno)
         return ML_TOKEN_TYPE_ERROR;
 
-    data->value.number = value;
+    if (data)
+        data->value.number = value;
     return ML_TOKEN_TYPE_NUMBER;
 }
 
@@ -196,7 +197,8 @@ static enum ml_token_type resolve_argument_token(struct ml_token_ctx *ctx,
     if (index < 10 && num_offset + 1 != ctx->token_idx)
         return ML_TOKEN_TYPE_ERROR;
 
-    data->value.index = index;
+    if (data)
+        data->value.index = index;
     return ML_TOKEN_TYPE_ARGUMENT;
 }
 
