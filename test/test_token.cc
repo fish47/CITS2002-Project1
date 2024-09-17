@@ -63,7 +63,7 @@ public:
                 break;
             else if (type == ML_TOKEN_TYPE_SPACE)
                 continue;
-            values.emplace_back(data.value.real);
+            values.emplace_back(data.value.number);
             names.emplace_back(data.buf ? data.buf : "");
         }
         CPPUNIT_ASSERT(values == std::vector<float>({0, 123, 0, 0}));
@@ -131,7 +131,7 @@ public:
     }
 
     void testValues() {
-        CPPUNIT_ASSERT_EQUAL(1234.5, parseTokenValue("1234.5").value.real);
+        CPPUNIT_ASSERT_EQUAL(1234.5, parseTokenValue("1234.5").value.number);
         CPPUNIT_ASSERT_EQUAL(1234, parseTokenValue("arg1234").value.index);
     }
 

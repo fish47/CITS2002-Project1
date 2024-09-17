@@ -19,7 +19,7 @@ struct ml_token_data {
     int len;
     union {
         int index;
-        double real;
+        double number;
     } value;
 };
 

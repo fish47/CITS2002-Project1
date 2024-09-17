@@ -174,7 +174,7 @@ static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
     if (errno)
         return ML_TOKEN_TYPE_ERROR;
 
-    data->value.real = value;
+    data->value.number = value;
     return ML_TOKEN_TYPE_NUMBER;
 }
 
