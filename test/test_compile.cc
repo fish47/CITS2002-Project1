@@ -159,11 +159,11 @@ public:
             "function abc,",
         };
         const std::vector<enum ml_compile_result> results = {
-            ML_COMPILE_RESULT_SYNTAX_ERROR,
-            ML_COMPILE_RESULT_NAME_COLLISION,
-            ML_COMPILE_RESULT_SYNTAX_ERROR,
-            ML_COMPILE_RESULT_SYNTAX_ERROR,
-            ML_COMPILE_RESULT_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_ERROR_NAME_COLLISION,
+            ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
+            ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
         };
         CPPUNIT_ASSERT(signatures.size() == results.size());
 

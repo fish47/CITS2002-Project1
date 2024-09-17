@@ -114,11 +114,11 @@ static bool fail_on_error(struct feed_state *state, enum ml_compile_result error
 }
 
 static bool fail_on_no_memory(struct feed_state *state) {
-    return fail_on_error(state, ML_COMPILE_RESULT_OUT_OF_MEMORY);
+    return fail_on_error(state, ML_COMPILE_RESULT_ERROR_OUT_OF_MEMORY);
 }
 
 static bool fail_on_syntax_error(struct feed_state *state) {
-    return fail_on_error(state, ML_COMPILE_RESULT_SYNTAX_ERROR);
+    return fail_on_error(state, ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR);
 }
 
 static int symbol_find(struct ml_compile_ctx *ctx, const char *name) {
@@ -149,7 +149,7 @@ static bool symbol_mark(struct symbol_entry *entry,
     } else if (entry->usage == SYMBOL_USAGE_NONE) {
         goto pass;
     } else if (entry->usage != usage && entry->usage != SYMBOL_USAGE_FUNC_PARAM) {
-        *error = ML_COMPILE_RESULT_NAME_COLLISION;
+        *error = ML_COMPILE_RESULT_ERROR_NAME_COLLISION;
         return false;
     }
 pass:
@@ -274,7 +274,7 @@ static bool feed_read_next(struct feed_state *state) {
     if (state->type != ML_TOKEN_TYPE_ERROR)
         return true;
 
-    state->error = ML_COMPILE_RESULT_INVALID_TOKEN;
+    state->error = ML_COMPILE_RESULT_ERROR_INVALID_TOKEN;
     return false;
 }
 
@@ -395,7 +395,7 @@ enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
                 if (!parse_assignment(ctx, &state, sym_idx))
                     return state.error;
             } else {
-                return ML_COMPILE_RESULT_SYNTAX_ERROR;
+                return ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR;
             }
         } else if (state.type == ML_TOKEN_TYPE_FUNCTION) {
             if (!parse_function(ctx, &state))
@@ -409,9 +409,9 @@ enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
         } else if (state.type == ML_TOKEN_TYPE_EOF) {
             break;
         } else if (state.type == ML_TOKEN_TYPE_ERROR) {
-            return ML_COMPILE_RESULT_INVALID_TOKEN;
+            return ML_COMPILE_RESULT_ERROR_INVALID_TOKEN;
         } else {
-            return ML_COMPILE_RESULT_SYNTAX_ERROR;
+            return ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR;
         }
     }
     return ML_COMPILE_RESULT_SUCCEED;
