@@ -132,37 +132,39 @@ Tokenizer::~Tokenizer() {
 }
 
 int Tokenizer::doReadString(void *opaque, char *buffer, int capacity) {
-    auto ctx = reinterpret_cast<Tokenizer*>(opaque);
-    if (ctx->index >= ctx->lines.size())
-        return 0;
+    auto t = reinterpret_cast<Tokenizer*>(opaque);
+    int count = 0;
+    while (count < capacity && t->index < t->lines.size()) {
+        // the length of current line is lazy-calculated
+        auto &line = t->lines[t->index];
+        if (!t->cursor.count)
+            t->cursor.count = line.length();
 
-    // the length of current line is lazy-calculated
-    auto line = ctx->lines[ctx->index];
-    if (!ctx->cursor.count)
-        ctx->cursor.count = line.length();
-
-    // fill buffer with the remaining content
-    int count = std::min(ctx->cursor.count - ctx->cursor.offset, capacity);
-    if (count)
-        std::memcpy(buffer, line + ctx->cursor.offset, count);
-    ctx->cursor.offset += count;
-
-    // lines are separated by newline characters
-    if (ctx->cursor.offset == ctx->cursor.count) {
-        bool next = true;
-        if (ctx->index + 1 < ctx->lines.size())  {
-            if (count >= capacity) {
-                next = false;
-            } else {
-                // insert a newline when the line is read and the capacity is large enough
-                buffer[count++] = '\n';
-            }
+        // fill buffer with the remaining content
+        int chunk = std::min(t->cursor.count - t->cursor.offset, capacity - count);
+        if (chunk > 0) {
+            std::memcpy(buffer + count, line + t->cursor.offset, chunk);
+            count += chunk;
+            t->cursor.offset += chunk;
         }
 
-        if (next) {
-            ctx->index++;
-            ctx->cursor.offset = 0;
-            ctx->cursor.count = 0;
+        // lines are separated by newline characters
+        if (t->cursor.offset == t->cursor.count) {
+            bool next = true;
+            if (t->index + 1 < t->lines.size())  {
+                if (count >= capacity) {
+                    next = false;
+                } else {
+                    // insert a newline when the line is read and the capacity is large enough
+                    buffer[count++] = '\n';
+                }
+            }
+
+            if (next) {
+                t->index++;
+                t->cursor.offset = 0;
+                t->cursor.count = 0;
+            }
         }
     }
 
