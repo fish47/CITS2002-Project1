@@ -35,41 +35,52 @@ public:
 
 private:
     ml_compile_ctx *ctx = nullptr;
+    std::vector<RawString> globals;
+    std::vector<Function> functions;
+
+private:
+    static std::vector<RawString> makeParams(const union ml_compile_visit_data *data) {
+        std::vector<RawString> params(data->func.count);
+        for (int i = 0; i < data->func.count; i++)
+            params[i] = data->func.params[i];
+        return params;
+    }
+
+    static void onVisitEvent(void *opaque,
+                             enum ml_compile_visit_event event,
+                             const union ml_compile_visit_data *data) {
+        auto c = reinterpret_cast<Compiler*>(opaque);
+        switch (event) {
+            case ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START:
+                c->globals.clear();
+                break;
+            case ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR:
+                c->globals.emplace_back(data->name);
+                break;
+            case ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_START:
+                c->functions.clear();
+                break;
+            case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START:
+                c->functions.emplace_back(data->func.name, makeParams(data));
+                break;
+            default:
+                break;
+        }
+    }
 
 public:
-    Compiler() {
-        ml_compile_ctx_init(&ctx, nullptr);
-    }
+    Compiler() { ml_compile_ctx_init(&ctx, nullptr); }
+    ~Compiler() { ml_compile_ctx_uninit(&ctx); }
 
-    ~Compiler() {
-        ml_compile_ctx_uninit(&ctx);
-    }
+    const std::vector<RawString>& getGlobals() { return globals; }
+    const std::vector<Function>& getFunctions() { return functions; }
 
     enum ml_compile_result feedLines(std::vector<RawString>&& lines) {
         Tokenizer t(std::move(lines));
-        return ml_compile_feed_tokens(ctx, t.cast());
-    }
-
-    template <typename F>
-    void iterateGlobalVariables(F op) {
-        CPPUNIT_ASSERT(ctx);
-        const char **names = nullptr;
-        const auto count = ml_compile_get_global_names(ctx, &names);
-        for (int i = 0; i < count; i++)
-            op(names[i]);
-    }
-
-    int getFunctionCount() {
-        return ml_compile_get_func_count(ctx);
-    }
-
-    Function getFunctionAt(int i) {
-        CPPUNIT_ASSERT(i < getFunctionCount());
-        std::vector<RawString> params;
-        const char *name = ml_compile_get_func_name(ctx, i);
-        for (int j = 0, n = ml_compile_get_func_param_count(ctx, i); j < n; j++)
-            params.emplace_back(ml_compile_get_func_param_name(ctx, i, j));
-        return Function(name, std::move(params));
+        auto result = ml_compile_feed(ctx, t.cast());
+        if (result == ML_COMPILE_RESULT_SUCCEED)
+            ml_compile_accept(ctx, this, onVisitEvent);
+        return result;
     }
 };
 
@@ -107,8 +118,7 @@ public:
             pointers.emplace_back("");
             CPPUNIT_ASSERT(c.feedLines(std::move(pointers)) == ML_COMPILE_RESULT_SUCCEED);
 
-            globals.clear();
-            c.iterateGlobalVariables([&globals](const char *name) { globals.emplace_back(name); });
+            globals = c.getGlobals();
             std::sort(globals.begin(), globals.end());
             CPPUNIT_ASSERT(names == globals);
         }
@@ -149,9 +159,9 @@ public:
         for (const auto &line : signatures)
             CPPUNIT_ASSERT(c.feedLines({line, "\tvar <- 1", ""}) == ML_COMPILE_RESULT_SUCCEED);
 
-        CPPUNIT_ASSERT(c.getFunctionCount() == funcs.size());
+        CPPUNIT_ASSERT(c.getFunctions().size() == funcs.size());
         for (int i = 0, n = funcs.size(); i < n; i++)
-            CPPUNIT_ASSERT(c.getFunctionAt(i) == funcs[i]);
+            CPPUNIT_ASSERT(c.getFunctions()[i] == funcs[i]);
     }
 
     void testParamName() {

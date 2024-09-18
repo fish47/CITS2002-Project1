@@ -149,9 +149,6 @@ struct ml_compile_ctx {
 
     struct ml_list_token tokens_main;
     struct ml_list_token tokens_sub;
-
-    void *result_holder;
-    size_t result_capacity;
 };
 
 static const struct ml_compile_ctx_init_args ml_compile_ctx_init_args_default = {
@@ -320,46 +317,8 @@ void ml_compile_ctx_uninit(struct ml_compile_ctx **pp) {
     list_uninit_int(&ctx->param_offsets);
     list_uninit_token(&ctx->tokens_main);
     list_uninit_token(&ctx->tokens_sub);
-    if (ctx->result_holder)
-        ml_memory_free(ctx->result_holder);
     ml_memory_free(ctx);
     *pp = NULL;
-}
-
-static void *ensure_result_capacity(struct ml_compile_ctx *ctx, size_t capacity) {
-    if (ctx->result_capacity >= capacity)
-        return ctx->result_holder;
-
-    void *base = ml_memory_realloc(ctx->result_holder, capacity);
-    if (!base)
-        return NULL;
-
-    ctx->result_holder = base;
-    ctx->result_capacity = capacity;
-    return ctx->result_holder;
-}
-
-int ml_compile_get_global_names(struct ml_compile_ctx *ctx, const char ***names) {
-    // how many global variable names
-    int count = 0;
-    for (int i = 0; i < ctx->symbol_entries.count; i++)
-        count += (ctx->symbol_entries.base[i].usage == SYMBOL_USAGE_GLOBAL_VAR);
-
-    *names = NULL;
-    if (!count)
-        return 0;
-
-    const char **base = ensure_result_capacity(ctx, sizeof(const char*) * count);
-    if (!base)
-        return 0;
-
-    for (int i = 0, j = 0; i < ctx->symbol_entries.count; i++) {
-        struct symbol_entry *entry = &ctx->symbol_entries.base[i];
-        if (entry->usage == SYMBOL_USAGE_GLOBAL_VAR)
-            base[j++] = ctx->symbol_chars.base + entry->offset;
-    }
-    *names = base;
-    return count;
 }
 
 static bool feed_read_next(struct feed_state *state) {
@@ -723,8 +682,7 @@ static bool parse_instruction(struct ml_compile_ctx *ctx,
     return true;
 }
 
-enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
-                                              struct ml_token_ctx *token) {
+enum ml_compile_result ml_compile_feed(struct ml_compile_ctx *ctx, struct ml_token_ctx *token) {
     struct feed_state state = {
         .ctx = token,
         .error = ML_COMPILE_RESULT_SUCCEED,
@@ -816,21 +774,66 @@ enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
     return ML_COMPILE_RESULT_SUCCEED;
 }
 
-int ml_compile_get_func_count(struct ml_compile_ctx *ctx) {
-    return ctx->func_list.count;
+static bool ensure_visitor_buffer(void **buffer, size_t *capacity, size_t request) {
+    if (*capacity >= request)
+        return true;
+
+    void *p = ml_memory_realloc(*buffer, request);
+    if (!p)
+        return false;
+
+    *buffer = p;
+    *capacity = request;
+    return true;
 }
 
-const char *ml_compile_get_func_name(struct ml_compile_ctx *ctx, int i) {
-    return ctx->symbol_chars.base + ctx->func_list.base[i].name_offset;
-}
+void ml_compile_accept(struct ml_compile_ctx *ctx, void *opaque, ml_compile_visit_fn fn) {
+    if (!fn)
+        return;
 
-int ml_compile_get_func_param_count(struct ml_compile_ctx *ctx, int i) {
-    return ctx->func_list.base[i].param_end - ctx->func_list.base[i].param_begin;
-}
+    size_t capacity = 0;
+    void *buffer = NULL;
 
-const char *ml_compile_get_func_param_name(struct ml_compile_ctx *ctx, int i, int j) {
-    struct func_entry *func = &ctx->func_list.base[i];
-    int offset = ctx->param_offsets.base[func->param_begin + j];
-    return ctx->symbol_chars.base + offset;
+    // globals
+    fn(opaque, ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START, NULL);
+    for (int i = 0; i < ctx->symbol_entries.count; i++) {
+        struct symbol_entry *symbol = &ctx->symbol_entries.base[i];
+        if (symbol->usage != SYMBOL_USAGE_GLOBAL_VAR)
+            continue;
+        fn(opaque, ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR, &(union ml_compile_visit_data) {
+            .name = ctx->symbol_chars.base + symbol->offset,
+        });
+    }
+    fn(opaque, ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_END, NULL);
+
+    // functions
+    fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_START, NULL);
+    for (int i = 0; i < ctx->func_list.count; i++) {
+        struct func_entry *func = &ctx->func_list.base[i];
+        int count = func->param_end - func->param_begin;
+        if (!ensure_visitor_buffer(&buffer, &capacity, sizeof(const char*) * count))
+            continue;
+
+        const char *name = ctx->symbol_chars.base + func->name_offset;
+        const char **params = (count > 0) ? buffer : NULL;
+        for (int j = 0; j < count; j++) {
+            int offset = ctx->param_offsets.base[func->param_begin + j];
+            params[j] = ctx->symbol_chars.base + offset;
+        }
+
+        fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START, &(union ml_compile_visit_data) {
+            .func = {
+                .ret = func->has_return,
+                .name = name,
+                .params = params,
+                .count = count,
+            },
+        });
+        fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END, NULL);
+    }
+    fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_END, NULL);
+
+    if (buffer)
+        ml_memory_free(buffer);
 }
 

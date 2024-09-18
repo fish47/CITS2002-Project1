@@ -22,6 +22,30 @@ enum ml_compile_result {
     ML_COMPILE_RESULT_ERROR_REDUNDANT_RETURN,
 };
 
+union ml_compile_visit_data {
+    const char *name;
+    struct {
+        bool ret;
+        const char *name;
+        const char **params;
+        int count;
+    } func;
+};
+
+enum ml_compile_visit_event {
+    ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START,
+    ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR,
+    ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_END,
+    ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_START,
+    ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START,
+    ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END,
+    ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_END,
+};
+
+typedef void (*ml_compile_visit_fn)(void *opaque,
+                                    enum ml_compile_visit_event event,
+                                    const union ml_compile_visit_data *data);
+
 struct ml_compile_ctx;
 
 bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
@@ -29,15 +53,6 @@ bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
 
 void ml_compile_ctx_uninit(struct ml_compile_ctx **pp);
 
-enum ml_compile_result ml_compile_feed_tokens(struct ml_compile_ctx *ctx,
-                                              struct ml_token_ctx *token);
+enum ml_compile_result ml_compile_feed(struct ml_compile_ctx *ctx, struct ml_token_ctx *token);
 
-int ml_compile_get_global_names(struct ml_compile_ctx *ctx, const char ***names);
-
-int ml_compile_get_func_count(struct ml_compile_ctx *ctx);
-
-const char *ml_compile_get_func_name(struct ml_compile_ctx *ctx, int i);
-
-int ml_compile_get_func_param_count(struct ml_compile_ctx *ctx, int i);
-
-const char *ml_compile_get_func_param_name(struct ml_compile_ctx *ctx, int i, int j);
+void ml_compile_accept(struct ml_compile_ctx *ctx, void *opaque, ml_compile_visit_fn fn);
