@@ -24,6 +24,7 @@ enum ml_compile_result {
 };
 
 union ml_compile_visit_data {
+    int index;
     const char *name;
     struct {
         bool ret;
@@ -34,6 +35,9 @@ union ml_compile_visit_data {
 };
 
 enum ml_compile_visit_event {
+    ML_COMPILE_VISIT_EVENT_ARG_SECTION_START,
+    ML_COMPILE_VISIT_EVENT_ARG_VISIT_INDEX,
+    ML_COMPILE_VISIT_EVENT_ARG_SECTION_END,
     ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START,
     ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR,
     ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_END,

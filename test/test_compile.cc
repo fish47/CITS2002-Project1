@@ -35,6 +35,7 @@ public:
 
 private:
     ml_compile_ctx *ctx = nullptr;
+    std::vector<int> args;
     std::vector<RawString> globals;
     std::vector<Function> functions;
 
@@ -51,6 +52,12 @@ private:
                              const union ml_compile_visit_data *data) {
         auto c = reinterpret_cast<Compiler*>(opaque);
         switch (event) {
+            case ML_COMPILE_VISIT_EVENT_ARG_SECTION_START:
+                c->args.clear();
+                break;
+            case ML_COMPILE_VISIT_EVENT_ARG_VISIT_INDEX:
+                c->args.emplace_back(data->index);
+                break;
             case ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START:
                 c->globals.clear();
                 break;
@@ -72,7 +79,8 @@ public:
     Compiler() { ml_compile_ctx_init(&ctx, nullptr); }
     ~Compiler() { ml_compile_ctx_uninit(&ctx); }
 
-    const std::vector<RawString>& getGlobals() { return globals; }
+    const std::vector<int>& getGlobalArgIndexes() { return args; }
+    const std::vector<RawString>& getGlobalVariables() { return globals; }
     const std::vector<Function>& getFunctions() { return functions; }
 
     enum ml_compile_result feedLines(std::vector<RawString>&& lines) {
@@ -84,14 +92,15 @@ public:
     }
 };
 
-class TestCompileStrings : public BaseTextFixture {
+class TestCompileCollect : public BaseTextFixture {
 
-    CPPUNIT_TEST_SUITE(TestCompileStrings);
-    CPPUNIT_TEST(testCollectGloabNames);
+    CPPUNIT_TEST_SUITE(TestCompileCollect);
+    CPPUNIT_TEST(testGloabVariables);
+    CPPUNIT_TEST(testGlobalArgIndexes);
     CPPUNIT_TEST_SUITE_END();
 
 public:
-    void testCollectGloabNames() {
+    void testGloabVariables() {
         std::vector<RawString> names {"abc", "helen", "fish", "uwa"};
         std::sort(names.begin(), names.end());
 
@@ -118,10 +127,37 @@ public:
             pointers.emplace_back("");
             CPPUNIT_ASSERT(c.feedLines(std::move(pointers)) == ML_COMPILE_RESULT_SUCCEED);
 
-            globals = c.getGlobals();
+            globals = c.getGlobalVariables();
             std::sort(globals.begin(), globals.end());
             CPPUNIT_ASSERT(names == globals);
         }
+    }
+
+    void testGlobalArgIndexes() {
+        Compiler c1;
+        CPPUNIT_ASSERT(c1.feedLines({
+            "var <- x + y + arg4",
+            "var <- x + y + arg7",
+            "function func a b c",
+            "\t a <- a + b + c + arg2",
+            "var <- func(arg9, arg14, var) + arg47",
+        }) == ML_COMPILE_RESULT_SUCCEED);
+        CPPUNIT_ASSERT(c1.getGlobalArgIndexes() == std::vector<int>({
+            2, 4, 7, 9, 14, 47,
+        }));
+
+        Compiler c2;
+        CPPUNIT_ASSERT(c2.feedLines({
+            "function func a b c",
+            "\t  print (a + b) * c + arg0",
+            "print arg0",
+            "print (1 + 3) / 0.5 * 2 / 8",
+            "print func(1, 2, arg47)",
+            "print func(arg1, arg2, 4) + func(1, 2, arg3)",
+        }) == ML_COMPILE_RESULT_SUCCEED);
+        CPPUNIT_ASSERT(c2.getGlobalArgIndexes() == std::vector<int>({
+            0, 1, 2, 3, 47,
+        }));
     }
 };
 
@@ -343,7 +379,7 @@ public:
 };
 
 
-CPPUNIT_TEST_SUITE_REGISTRATION(TestCompileStrings);
+CPPUNIT_TEST_SUITE_REGISTRATION(TestCompileCollect);
 CPPUNIT_TEST_SUITE_REGISTRATION(TestCompileFunction);
 
 }

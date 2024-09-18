@@ -150,6 +150,8 @@ struct ml_compile_ctx {
 
     struct ml_list_token tokens_main;
     struct ml_list_token tokens_sub;
+
+    struct ml_list_int arg_indexes;
 };
 
 static const struct ml_compile_ctx_init_args ml_compile_ctx_init_args_default = {
@@ -298,6 +300,8 @@ bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
         goto fail;
     if (!list_init_token(&ctx->tokens_sub, p_args->list_default_capacity))
         goto fail;
+    if (!list_init_int(&ctx->arg_indexes, p_args->list_default_capacity))
+        goto fail;
 
     *pp = ctx;
     return true;
@@ -318,6 +322,7 @@ void ml_compile_ctx_uninit(struct ml_compile_ctx **pp) {
     list_uninit_int(&ctx->param_offsets);
     list_uninit_token(&ctx->tokens_main);
     list_uninit_token(&ctx->tokens_sub);
+    list_uninit_int(&ctx->arg_indexes);
     ml_memory_free(ctx);
     *pp = NULL;
 }
@@ -475,15 +480,30 @@ static bool parse_function(struct ml_compile_ctx *ctx, struct feed_state *state)
     return true;
 }
 
-static bool parse_do_check_func_symbol(enum symbol_usage usage,
-                                       struct feed_state *state,
-                                       bool *check) {
-    if (*check) {
-        // just do it once
-        *check = false;
-        if (usage != SYMBOL_USAGE_FUNC_NAME)
-            return fail_on_syntax_error(state);
+static bool parse_do_mark_arg_index(struct ml_compile_ctx *ctx, struct feed_state *state) {
+    int idx = 0;
+    int val = state->data.value.index;
+    while (idx < ctx->arg_indexes.count) {
+        const int cmp = ctx->arg_indexes.base[idx];
+        if (cmp == val)
+            return true;
+        else if (cmp > val)
+            break;
+        idx++;
     }
+
+    if (!list_grow_int(&ctx->arg_indexes, 1))
+        return fail_on_no_memory(state);
+
+    // the insert point makes sure values are sorted
+    int move = ctx->arg_indexes.count - idx;
+    if (move) {
+        int *base = ctx->arg_indexes.base + idx;
+        memmove(base + 1, base, sizeof(int) * move);
+    }
+
+    ctx->arg_indexes.base[idx] = val;
+    ctx->arg_indexes.count++;
     return true;
 }
 
@@ -542,7 +562,8 @@ static bool parse_expression(struct ml_compile_ctx *ctx, struct feed_state *stat
                 break;
 
             case ML_TOKEN_TYPE_ARGUMENT:
-                //TODO only available in main function?
+                if (!parse_do_mark_arg_index(ctx, state))
+                    return false;
                 valid = true;
                 token = (struct token_entry) {
                     .type = TOKEN_ENTRY_TYPE_ARGUMENT,
@@ -794,6 +815,15 @@ void ml_compile_accept(struct ml_compile_ctx *ctx, void *opaque, ml_compile_visi
 
     size_t capacity = 0;
     void *buffer = NULL;
+
+    // args
+    fn(opaque, ML_COMPILE_VISIT_EVENT_ARG_SECTION_START, NULL);
+    for (int i = 0; i < ctx->arg_indexes.count; i++) {
+        fn(opaque, ML_COMPILE_VISIT_EVENT_ARG_VISIT_INDEX, &(union ml_compile_visit_data) {
+            .index = ctx->arg_indexes.base[i],
+        });
+    }
+    fn(opaque, ML_COMPILE_VISIT_EVENT_ARG_SECTION_END, NULL);
 
     // globals
     fn(opaque, ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START, NULL);
