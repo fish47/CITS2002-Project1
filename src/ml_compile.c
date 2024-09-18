@@ -1,5 +1,6 @@
 #include "ml_compile.h"
 #include "ml_memory.h"
+#include "ml_token.h"
 
 #include <stdint.h>
 #include <string.h>

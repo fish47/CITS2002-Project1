@@ -2,7 +2,8 @@
 
 #include <stdbool.h>
 
-#include "ml_token.h"
+struct ml_token_ctx;
+struct ml_compile_ctx;
 
 struct ml_compile_ctx_init_args {
     int list_default_capacity;
