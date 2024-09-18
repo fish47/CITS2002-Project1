@@ -81,11 +81,11 @@ class TestCompileStrings : public BaseTextFixture {
 
 public:
     void testCollectGloabNames() {
-        std::vector<std::string> names {"abc", "helen", "fish", "uwa"};
+        std::vector<RawString> names {"abc", "helen", "fish", "uwa"};
         std::sort(names.begin(), names.end());
 
         std::vector<std::string> lines;
-        std::vector<std::string> globals;
+        std::vector<RawString> globals;
         std::vector<RawString> pointers;
         std::default_random_engine engine;
         for (int i = 0; i < 40; i++) {
@@ -125,13 +125,13 @@ class TestCompileFunction : public BaseTextFixture {
 
 public:
     void testNames() {
-        const std::vector<RawString> signatures = {
+        const std::vector<RawString> signatures({
             "function zzzz",
             "function z a b c",
             "function za     ",
             "function bc # Hello",
             "function aab a b # Hello",
-        };
+        });
         const std::vector<Compiler::Function> funcs({
             {"zzzz"},
             {"z", {"a", "b", "c"}},
@@ -150,20 +150,20 @@ public:
     }
 
     void testInvalid() {
-        const std::vector<RawString> signatures = {
+        const std::vector<RawString> signatures({
             "function abc a b a",
             "function abc a abc",
             "function abc a b b",
             "function #hello",
             "function abc,",
-        };
-        const std::vector<enum ml_compile_result> results = {
+        });
+        const std::vector<enum ml_compile_result> results({
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
             ML_COMPILE_RESULT_ERROR_NAME_COLLISION,
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
             ML_COMPILE_RESULT_ERROR_SYNTAX_ERROR,
-        };
+        });
         CPPUNIT_ASSERT(signatures.size() == results.size());
 
         for (int i = 0, n = signatures.size(); i < n; i++) {
