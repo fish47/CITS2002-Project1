@@ -139,7 +139,7 @@ int Tokenizer::doReadString(void *opaque, char *buffer, int capacity) {
     // the length of current line is lazy-calculated
     auto line = ctx->lines[ctx->index];
     if (!ctx->cursor.count)
-        ctx->cursor.count = std::strlen(line);
+        ctx->cursor.count = line.length();
 
     // fill buffer with the remaining content
     int count = std::min(ctx->cursor.count - ctx->cursor.offset, capacity);
@@ -185,13 +185,13 @@ bool Tokenizer::check(std::initializer_list<enum ml_token_type> types) {
     return matched;
 }
 
-bool Tokenizer::check(std::initializer_list<const char*> tokens) {
+bool Tokenizer::check(std::initializer_list<RawString> tokens) {
     bool matched = true;
     auto it = tokens.begin();
     iterate([&matched, &it, &tokens](enum ml_token_type type, const ml_token_data &data) {
         matched &= (it == tokens.end())
             ? (type == ML_TOKEN_TYPE_EOF)
-            : (data.buf && *it && std::strcmp(data.buf, *it++) == 0);
+            : (data.buf && *it++ == data.buf);
     });
     return matched;
 }

@@ -17,20 +17,19 @@ namespace runml {
 class Compiler {
 public:
     struct Function {
-        const char *name;
-        const std::vector<const char*> params;
+        RawString name;
+        const std::vector<RawString> params;
 
-        Function(const char *n, std::vector<const char*> &&p)
+        Function(const char *n, std::vector<RawString> &&p)
             : name(n), params(std::move(p)) {}
 
-        Function(const char *n, std::initializer_list<const char*> &&p = {})
-            : Function(n, std::vector<const char*>(p)) {}
+        Function(const char *n, std::initializer_list<RawString> &&p = {})
+            : Function(n, std::vector<RawString>(p)) {}
 
         bool operator==(const Function &rhs) const {
-            return std::strcmp(name, rhs.name) == 0
+            return name == rhs.name
                 && params.size() == rhs.params.size()
-                && std::equal(params.cbegin(), params.cend(), rhs.params.cbegin(),
-                              [](const char *l, const char *r) { return std::strcmp(l, r) == 0; });
+                && std::equal(params.cbegin(), params.cend(), rhs.params.cbegin());
         }
     };
 
@@ -46,7 +45,7 @@ public:
         ml_compile_ctx_uninit(&ctx);
     }
 
-    enum ml_compile_result feedLines(std::vector<const char*>&& lines) {
+    enum ml_compile_result feedLines(std::vector<RawString>&& lines) {
         Tokenizer t(std::move(lines));
         return ml_compile_feed_tokens(ctx, t.cast());
     }
@@ -66,7 +65,7 @@ public:
 
     Function getFunctionAt(int i) {
         CPPUNIT_ASSERT(i < getFunctionCount());
-        std::vector<const char*> params;
+        std::vector<RawString> params;
         const char *name = ml_compile_get_func_name(ctx, i);
         for (int j = 0, n = ml_compile_get_func_param_count(ctx, i); j < n; j++)
             params.emplace_back(ml_compile_get_func_param_name(ctx, i, j));
@@ -87,7 +86,7 @@ public:
 
         std::vector<std::string> lines;
         std::vector<std::string> globals;
-        std::vector<const char*> pointers;
+        std::vector<RawString> pointers;
         std::default_random_engine engine;
         for (int i = 0; i < 40; i++) {
             // make assignment statements
@@ -126,7 +125,7 @@ class TestCompileFunction : public BaseTextFixture {
 
 public:
     void testNames() {
-        const std::vector<const char*> signatures = {
+        const std::vector<RawString> signatures = {
             "function zzzz",
             "function z a b c",
             "function za     ",
@@ -151,7 +150,7 @@ public:
     }
 
     void testInvalid() {
-        const std::vector<const char*> signatures = {
+        const std::vector<RawString> signatures = {
             "function abc a b a",
             "function abc a abc",
             "function abc a b b",

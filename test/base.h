@@ -2,6 +2,7 @@ extern "C" {
 #include "ml_token.h"
 }
 
+#include <cstring>
 #include <initializer_list>
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -17,9 +18,32 @@ protected:
     void setMaxAllocCount(size_t count);
 };
 
+class RawString {
+private:
+    const char* pointer;
+
+public:
+    RawString() : RawString(nullptr) {}
+    RawString(const char *s) : pointer(s ? s : "") {}
+    RawString(const RawString &s) : pointer(s.pointer) {}
+
+    int length() const { return std::strlen(pointer); }
+
+    bool operator==(const char *rhs) const { return rhs && std::strcmp(pointer, rhs) == 0; }
+    bool operator==(const RawString &rhs) const { return operator==(rhs.pointer); }
+    bool operator<(const RawString &rhs) const { return std::strcmp(pointer, rhs.pointer) < 0; }
+
+    operator const char*() const { return pointer; }
+
+    RawString& operator=(const RawString& rhs) {
+        pointer = rhs.pointer;
+        return *this;
+    }
+};
+
 class Tokenizer {
 private:
-    using RawStringLines = std::vector<const char*>;
+    using RawStringLines = std::vector<RawString>;
 
 private:
     struct {
@@ -48,7 +72,7 @@ public:
     ~Tokenizer();
 
     struct ml_token_ctx *cast() const { return ctx; }
-    bool check(std::initializer_list<const char*> tokens);
+    bool check(std::initializer_list<RawString> tokens);
     bool check(std::initializer_list<enum ml_token_type> types);
 
     template <typename Op>
