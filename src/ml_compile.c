@@ -809,6 +809,52 @@ static bool ensure_visitor_buffer(void **buffer, size_t *capacity, size_t reques
     return true;
 }
 
+static void do_accept_statements(struct ml_compile_ctx *ctx,
+                                 void *opaque, ml_compile_visit_fn fn,
+                                 struct ml_list_token *tokens, int begin, int end) {
+    bool is_print = false;
+    bool is_started = false;
+    for (int i = begin; i < end; i++) {
+        if (!is_started) {
+            is_started = true;
+            fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_START, NULL);
+        }
+
+        struct token_entry *token = &tokens->base[i];
+        switch (token->type) {
+            case TOKEN_ENTRY_TYPE_PLAIN:
+                if (token->data.type == ML_TOKEN_TYPE_PRINT) {
+                    is_print = true;
+                    fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_PRINT_START, NULL);
+                } else {
+                    const union ml_compile_visit_data data = { .token = token->data.type };
+                    fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_TOKEN, &data);
+                }
+                break;
+            case TOKEN_ENTRY_TYPE_SYMBOL:
+                fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_SYMBOL,
+                   &(union ml_compile_visit_data) { .name = ctx->symbol_chars.base + token->data.offset });
+                break;
+            case TOKEN_ENTRY_TYPE_NUMBER:
+                fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_NUMBER,
+                   &(union ml_compile_visit_data) { .number = token->data.number });
+                break;
+            case TOKEN_ENTRY_TYPE_ARGUMENT:
+                fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_ARG,
+                   &(union ml_compile_visit_data) { .index = token->data.index });
+                break;
+            case TOKEN_ENTRY_TYPE_TERMINATOR:
+                if (is_print) {
+                    is_print = false;
+                    fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_PRINT_END, NULL);
+                }
+                is_started = false;
+                fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_END, NULL);
+                break;
+        }
+    }
+}
+
 void ml_compile_accept(struct ml_compile_ctx *ctx, void *opaque, ml_compile_visit_fn fn) {
     if (!fn)
         return;
@@ -845,8 +891,8 @@ void ml_compile_accept(struct ml_compile_ctx *ctx, void *opaque, ml_compile_visi
         if (!ensure_visitor_buffer(&buffer, &capacity, sizeof(const char*) * count))
             continue;
 
+        const char **params = buffer;
         const char *name = ctx->symbol_chars.base + func->name_offset;
-        const char **params = (count > 0) ? buffer : NULL;
         for (int j = 0; j < count; j++) {
             int offset = ctx->param_offsets.base[func->param_begin + j];
             params[j] = ctx->symbol_chars.base + offset;
@@ -860,9 +906,20 @@ void ml_compile_accept(struct ml_compile_ctx *ctx, void *opaque, ml_compile_visi
                 .count = count,
             },
         });
+        do_accept_statements(ctx, opaque, fn, &ctx->tokens_sub, func->token_begin, func->token_end);
         fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END, NULL);
     }
     fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_END, NULL);
+
+    // main
+    fn(opaque, ML_COMPILE_VISIT_EVENT_MAIN_FUNC_SECTION_START, NULL);
+    for (int i = 0; i < ctx->arg_indexes.count; i++) {
+        fn(opaque, ML_COMPILE_VISIT_EVENT_MAIN_FUNC_VISIT_ARG, &(union ml_compile_visit_data) {
+            .index = ctx->arg_indexes.base[i],
+        });
+    }
+    do_accept_statements(ctx, opaque, fn, &ctx->tokens_main, 0, ctx->tokens_main.count);
+    fn(opaque, ML_COMPILE_VISIT_EVENT_MAIN_FUNC_SECTION_END, NULL);
 
     if (buffer)
         ml_memory_free(buffer);

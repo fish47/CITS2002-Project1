@@ -28,6 +28,8 @@ set(runml_src_lib
     src/ml_token.c
     src/ml_compile.h
     src/ml_compile.c
+    src/ml_codegen.h
+    src/ml_codegen.c
 )
 
 set(runml_src_main
