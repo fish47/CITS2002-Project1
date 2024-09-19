@@ -230,8 +230,7 @@ static void do_write_compile_data(void *opaque,
 
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START:
             // e.g. "double func(double a, double b) {"
-            do_write_str(ctx, (data->func.ret ? "double" : "void"));
-            do_write_char(ctx, ' ');
+            do_write_str(ctx, "double ");
             do_write_str(ctx, data->func.name);
             do_write_char(ctx, '(');
             for (int i = 0; i < data->func.count; i++) {
@@ -245,8 +244,10 @@ static void do_write_compile_data(void *opaque,
             break;
 
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END:
+            if (!data->func.ret)
+                do_write_line_indent(ctx, "return 0;");
             do_write_line(ctx, "}");
-            if (data->position.index + 1 < data->position.count)
+            if (!data->func.last)
                 do_write_newline(ctx);
             break;
 

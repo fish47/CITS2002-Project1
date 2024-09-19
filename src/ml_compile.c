@@ -904,23 +904,19 @@ static void do_accept_functions(struct ml_compile_ctx *ctx,
             params[j] = ctx->symbol_chars.base + offset;
         }
 
-        fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START, &(union ml_compile_visit_data) {
+        const union ml_compile_visit_data data = {
             .func = {
                 .ret = func->has_return,
+                .last = (i + 1 == ctx->func_list.count),
                 .name = name,
                 .params = params,
                 .count = count,
-            },
-        });
-
-        do_accept_statements(ctx, opaque, fn, &ctx->tokens_sub, func->token_begin, func->token_end);
-
-        fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END, &(union ml_compile_visit_data) {
-            .position = {
-                .index = i,
-                .count = ctx->func_list.count,
             }
-        });
+        };
+
+        fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START, &data);
+        do_accept_statements(ctx, opaque, fn, &ctx->tokens_sub, func->token_begin, func->token_end);
+        fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END, &data);
     }
     fn(opaque, ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_END, NULL);
 

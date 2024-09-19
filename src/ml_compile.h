@@ -29,11 +29,8 @@ union ml_compile_visit_data {
     double number;
     const char *name;
     struct {
-        int index;
-        int count;
-    } position;
-    struct {
         bool ret;
+        bool last;
         const char *name;
         const char **params;
         int count;
