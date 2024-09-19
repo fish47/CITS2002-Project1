@@ -52,20 +52,11 @@ private:
                              const union ml_compile_visit_data *data) {
         auto c = reinterpret_cast<Compiler*>(opaque);
         switch (event) {
-            case ML_COMPILE_VISIT_EVENT_ARG_SECTION_START:
-                c->args.clear();
-                break;
             case ML_COMPILE_VISIT_EVENT_ARG_VISIT_INDEX:
                 c->args.emplace_back(data->index);
                 break;
-            case ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START:
-                c->globals.clear();
-                break;
             case ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR:
                 c->globals.emplace_back(data->name);
-                break;
-            case ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_START:
-                c->functions.clear();
                 break;
             case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START:
                 c->functions.emplace_back(data->func.name, makeParams(data));
@@ -84,10 +75,15 @@ public:
     const std::vector<Function>& getFunctions() { return functions; }
 
     enum ml_compile_result feedLines(std::vector<RawString>&& lines) {
+        args.clear();
+        globals.clear();
+        functions.clear();
+
         Tokenizer t(std::move(lines));
         auto result = ml_compile_feed(ctx, t.cast());
         if (result == ML_COMPILE_RESULT_SUCCEED)
             ml_compile_accept(ctx, this, onVisitEvent);
+
         return result;
     }
 };

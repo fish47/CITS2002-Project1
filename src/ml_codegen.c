@@ -8,6 +8,7 @@
 
 #define ML_CODEGEN_BUFFER_CAPACITY_WRITE    4096
 #define ML_CODEGEN_BUFFER_CAPACITY_NUM      32
+#define ML_CODEGEN_SECTION_COMMENT_WIDTH    80
 
 static int cb_codegen_write(void *opaque, char *buffer, int count);
 static void cb_codegen_close(void *opaque);
@@ -86,12 +87,53 @@ static void do_write_line_indent(struct codegen_ctx *ctx, const char *s) {
     do_write_line(ctx, s);
 }
 
+static void do_write_comment_tag(struct codegen_ctx *ctx, const char *name) {
+    do_write_str(ctx, "// ");
+
+    int count = name ? strlen(name) : 0;
+    int spaced = count ? (count + 2) : 0;
+    if (spaced + 2 > ML_CODEGEN_SECTION_COMMENT_WIDTH) {
+        do_write_str(ctx, name);
+    } else {
+        int offset = 0;
+        char buf[ML_CODEGEN_SECTION_COMMENT_WIDTH + 1];
+
+        int left = (ML_CODEGEN_SECTION_COMMENT_WIDTH - spaced) / 2;
+        int right = ML_CODEGEN_SECTION_COMMENT_WIDTH - spaced - left;
+
+        if (left > 0) {
+            memset(buf + offset, '=', left);
+            offset += left;
+        }
+
+        // center the tag and add 2 spaces for padding
+        if (count) {
+            buf[offset++] = ' ';
+            memcpy(buf + offset, name, count);
+            offset += count;
+            buf[offset++] = ' ';
+        }
+
+        if (right > 0) {
+            memset(buf + offset, '=', right);
+            offset += right;
+        }
+
+        buf[ML_CODEGEN_SECTION_COMMENT_WIDTH] = 0;
+        do_write_str(ctx, buf);
+    }
+
+    do_write_newline(ctx);
+}
+
 static void do_write_framework(struct codegen_ctx *ctx) {
     do_write_line(ctx, "#include <stdio.h>");
     do_write_line(ctx, "#include <stdlib.h>");
     do_write_line(ctx, "#include <math.h>");
     do_write_newline(ctx);
+    do_write_newline(ctx);
 
+    do_write_comment_tag(ctx, "framework");
     do_write_line(ctx, "void ml_print(double ml_val) {");
     do_write_line_indent(ctx, "double ml_int = 0;");
     do_write_line_indent(ctx, "double ml_frac = modf(ml_val, &ml_int);");
@@ -103,6 +145,8 @@ static void do_write_framework(struct codegen_ctx *ctx) {
     do_write_line(ctx, "double ml_parse_arg(int ml_i, char **ml_argv, int ml_argc) {");
     do_write_line_indent(ctx, "return (ml_i + 1 < ml_argc) ? strtod(ml_argv[ml_i + 1], NULL) : 0;");
     do_write_line(ctx, "}");
+    do_write_comment_tag(ctx, NULL);
+    do_write_newline(ctx);
     do_write_newline(ctx);
 }
 
@@ -147,8 +191,7 @@ static void do_write_compile_data(void *opaque,
     struct codegen_ctx *ctx = opaque;
     switch (event) {
         case ML_COMPILE_VISIT_EVENT_ARG_SECTION_START:
-            do_write_line(ctx, "// args");
-            do_write_newline(ctx);
+            do_write_comment_tag(ctx, "args");
             break;
 
         case ML_COMPILE_VISIT_EVENT_ARG_VISIT_INDEX:
@@ -162,8 +205,7 @@ static void do_write_compile_data(void *opaque,
             break;
 
         case ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_START:
-            do_write_line(ctx, "// globals");
-            do_write_newline(ctx);
+            do_write_comment_tag(ctx, "globals");
             break;
 
         case ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR:
@@ -177,12 +219,13 @@ static void do_write_compile_data(void *opaque,
         case ML_COMPILE_VISIT_EVENT_ARG_SECTION_END:
         case ML_COMPILE_VISIT_EVENT_GLOBAL_SECTION_END:
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_END:
+            do_write_comment_tag(ctx, NULL);
+            do_write_newline(ctx);
             do_write_newline(ctx);
             break;
 
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_SECTION_START:
-            do_write_line(ctx, "// functions");
-            do_write_newline(ctx);
+            do_write_comment_tag(ctx, "functions");
             break;
 
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START:
@@ -203,7 +246,8 @@ static void do_write_compile_data(void *opaque,
 
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_END:
             do_write_line(ctx, "}");
-            do_write_newline(ctx);
+            if (data->position.index + 1 < data->position.count)
+                do_write_newline(ctx);
             break;
 
         case ML_COMPILE_VISIT_EVENT_MAIN_FUNC_SECTION_START:
@@ -225,7 +269,6 @@ static void do_write_compile_data(void *opaque,
         case ML_COMPILE_VISIT_EVENT_MAIN_FUNC_SECTION_END:
             do_write_line_indent(ctx, "return EXIT_SUCCESS;");
             do_write_line(ctx, "}");
-            do_write_newline(ctx);
             break;
 
         case ML_COMPILE_VISIT_EVENT_STATEMENT_START:
