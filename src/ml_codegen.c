@@ -134,7 +134,7 @@ static void do_write_framework(struct codegen_ctx *ctx) {
     do_write_newline(ctx);
 
     do_write_comment_tag(ctx, "framework");
-    do_write_line(ctx, "void ml_print(double ml_val) {");
+    do_write_line(ctx, "static void ml_print(double ml_val) {");
     do_write_line_indent(ctx, "double ml_int = 0;");
     do_write_line_indent(ctx, "double ml_frac = modf(ml_val, &ml_int);");
     do_write_line_indent(ctx, "const char *ml_fmt = (ml_frac == 0) ? \"%.0f\\n\" : \"%.6f\\n\";");
@@ -142,7 +142,7 @@ static void do_write_framework(struct codegen_ctx *ctx) {
     do_write_line(ctx, "}");
     do_write_newline(ctx);
 
-    do_write_line(ctx, "double ml_parse_arg(int ml_i, char **ml_argv, int ml_argc) {");
+    do_write_line(ctx, "static double ml_parse_arg(int ml_i, char **ml_argv, int ml_argc) {");
     do_write_line_indent(ctx, "return (ml_i + 1 < ml_argc) ? strtod(ml_argv[ml_i + 1], NULL) : 0;");
     do_write_line(ctx, "}");
     do_write_comment_tag(ctx, NULL);
@@ -197,7 +197,7 @@ static void do_write_compile_data(void *opaque,
         case ML_COMPILE_VISIT_EVENT_ARG_VISIT_INDEX:
             // e.g. "double ml_arg4 = 0;"
             snprintf(buf, sizeof(buf), "%d", data->index);
-            do_write_str(ctx, "double ");
+            do_write_str(ctx, "static double ");
             do_write_str(ctx, "ml_arg");
             do_write_str(ctx, buf);
             do_write_str(ctx, " = 0;");
@@ -210,7 +210,7 @@ static void do_write_compile_data(void *opaque,
 
         case ML_COMPILE_VISIT_EVENT_GLOBAL_VISIT_VAR:
             // e.g. "double var = 0;"
-            do_write_str(ctx, "double ");
+            do_write_str(ctx, "static double ");
             do_write_str(ctx, data->name);
             do_write_str(ctx, " = 0;");
             do_write_newline(ctx);
@@ -230,7 +230,7 @@ static void do_write_compile_data(void *opaque,
 
         case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START:
             // e.g. "double func(double a, double b) {"
-            do_write_str(ctx, "double ");
+            do_write_str(ctx, "static double ");
             do_write_str(ctx, data->func.name);
             do_write_char(ctx, '(');
             for (int i = 0; i < data->func.count; i++) {
