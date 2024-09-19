@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define ML_LIST_DECLARE(type, name)                                         \
+#define ML_LIST_DECLARE_BASE(type, name)                                    \
     struct ml_list_##name {                                                 \
         type *base;                                                         \
         int count;                                                          \
@@ -26,7 +26,8 @@
         ml_memory_free(p->base);                                            \
         *p = (struct ml_list_##name) {0};                                   \
     }                                                                       \
-                                                                            \
+
+#define ML_LIST_DECLARE_GROW(type, name)                                    \
     static bool list_grow_##name(struct ml_list_##name *p, int n) {         \
         int req_capacity = p->count + n;                                    \
         if (req_capacity > p->capacity) {                                   \
@@ -42,7 +43,8 @@
         }                                                                   \
         return true;                                                        \
     }                                                                       \
-                                                                            \
+
+#define ML_LIST_DECLARE_APPEND(type, name)                                  \
     static bool list_append_##name(struct ml_list_##name *p,                \
                                    const type *v) {                         \
         if (!list_grow_##name(p, 1))                                        \
@@ -51,7 +53,8 @@
         p->count++;                                                         \
         return true;                                                        \
     }                                                                       \
-                                                                            \
+
+#define ML_LIST_DECLARE_FILL(type, name)                                    \
     static bool list_fill_##name(struct ml_list_##name *p,                  \
                                  const type *v, int n) {                    \
         if (!list_grow_##name(p, n))                                        \
@@ -108,11 +111,26 @@ struct func_entry {
 
 // we have to use macros because generics are not supported in C language
 // more type safety and less lines of code, but losing a little bit of maintainability
-ML_LIST_DECLARE(int, int);
-ML_LIST_DECLARE(char, str);
-ML_LIST_DECLARE(struct func_entry, func);
-ML_LIST_DECLARE(struct symbol_entry, sym);
-ML_LIST_DECLARE(struct token_entry, token);
+
+ML_LIST_DECLARE_BASE(int, int);
+ML_LIST_DECLARE_GROW(int, int);
+ML_LIST_DECLARE_APPEND(int, int);
+
+ML_LIST_DECLARE_BASE(char, str);
+ML_LIST_DECLARE_GROW(char, str);
+ML_LIST_DECLARE_FILL(char, str);
+
+ML_LIST_DECLARE_BASE(struct func_entry, func);
+ML_LIST_DECLARE_GROW(struct func_entry, func);
+ML_LIST_DECLARE_APPEND(struct func_entry, func);
+
+ML_LIST_DECLARE_BASE(struct symbol_entry, sym);
+ML_LIST_DECLARE_GROW(struct symbol_entry, sym);
+
+ML_LIST_DECLARE_BASE(struct token_entry, token);
+ML_LIST_DECLARE_GROW(struct token_entry, token);
+ML_LIST_DECLARE_APPEND(struct token_entry, token);
+
 
 struct feed_state {
     struct ml_token_ctx *ctx;

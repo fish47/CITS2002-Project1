@@ -41,6 +41,10 @@ add_library(runml_lib SHARED
     ${runml_src_lib}
 )
 
+target_compile_options(runml_lib
+    PUBLIC -Wall -Werror
+)
+
 add_executable(runml_main
     ${runml_src_main}
 )

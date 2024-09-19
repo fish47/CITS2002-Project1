@@ -79,7 +79,6 @@ public:
     void iterate(Op op) {
         CPPUNIT_ASSERT(ctx);
         while (true) {
-            const char *token = nullptr;
             ml_token_data data = {0};
             auto type = ml_token_iterate(ctx, &data);
             op(type, data);

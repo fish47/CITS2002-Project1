@@ -58,7 +58,7 @@ public:
         std::vector<float> values;
         std::vector<std::string> names;
         while (true) {
-            ml_token_data data {"haha", 4, 123};
+            ml_token_data data {"haha", 4, {123}};
             auto type = ml_token_iterate(t.cast(), &data);
             if (type == ML_TOKEN_TYPE_EOF)
                 break;
