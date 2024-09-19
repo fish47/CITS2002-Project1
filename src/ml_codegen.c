@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define ML_CODEGEN_BUFFER_CAPACITY_WRITE    4096
-#define ML_CODEGEN_BUFFER_CAPACITY_NUM      32
+#define ML_CODEGEN_BUFFER_CAPACITY_NUM      64
 #define ML_CODEGEN_SECTION_COMMENT_WIDTH    80
 
 static int cb_codegen_write(void *opaque, char *buffer, int count);
@@ -297,7 +297,7 @@ static void do_write_compile_data(void *opaque,
             break;
 
         case ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_NUMBER:
-            snprintf(buf, sizeof(buf), "%f", data->number);
+            snprintf(buf, sizeof(buf), "%a", data->number);
             do_write_str(ctx, buf);
             break;
 
