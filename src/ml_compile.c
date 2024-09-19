@@ -95,7 +95,6 @@ struct token_entry {
     union {
         int index;
         int offset;
-        double number;
         enum ml_token_type type;
     } data;
 };
@@ -115,6 +114,10 @@ struct func_entry {
 ML_LIST_DECLARE_BASE(int, int);
 ML_LIST_DECLARE_GROW(int, int);
 ML_LIST_DECLARE_APPEND(int, int);
+
+ML_LIST_DECLARE_BASE(double, double);
+ML_LIST_DECLARE_GROW(double, double);
+ML_LIST_DECLARE_APPEND(double, double);
 
 ML_LIST_DECLARE_BASE(char, str);
 ML_LIST_DECLARE_GROW(char, str);
@@ -162,6 +165,8 @@ struct ml_compile_ctx {
 
     struct ml_list_str symbol_chars;
     struct ml_list_sym symbol_entries;
+
+    struct ml_list_double num_list;
 
     struct ml_list_func func_list;
     struct ml_list_int param_offsets;
@@ -310,6 +315,8 @@ bool ml_compile_ctx_init(struct ml_compile_ctx **pp,
         goto fail;
     if (!list_init_sym(&ctx->symbol_entries, p_args->list_default_capacity))
         goto fail;
+    if (!list_init_double(&ctx->num_list, p_args->list_default_capacity))
+        goto fail;
     if (!list_init_func(&ctx->func_list, p_args->list_default_capacity))
         goto fail;
     if (!list_init_int(&ctx->param_offsets, p_args->list_default_capacity))
@@ -336,6 +343,7 @@ void ml_compile_ctx_uninit(struct ml_compile_ctx **pp) {
 
     list_uninit_str(&ctx->symbol_chars);
     list_uninit_sym(&ctx->symbol_entries);
+    list_uninit_double(&ctx->num_list);
     list_uninit_func(&ctx->func_list);
     list_uninit_int(&ctx->param_offsets);
     list_uninit_token(&ctx->tokens_main);
@@ -590,10 +598,13 @@ static bool parse_expression(struct ml_compile_ctx *ctx, struct feed_state *stat
                 break;
 
             case ML_TOKEN_TYPE_NUMBER:
+                // will not many numbers, even duplicated ones
+                if (!list_append_double(&ctx->num_list, &state->data.value.number))
+                    return fail_on_no_memory(state);
                 valid = true;
                 token = (struct token_entry) {
                     .type = TOKEN_ENTRY_TYPE_NUMBER,
-                    .data = { .number = state->data.value.number },
+                    .data = { .offset = ctx->num_list.count - 1 },
                 };
                 break;
 
@@ -842,7 +853,7 @@ static void do_accept_statements(struct ml_compile_ctx *ctx,
                 break;
             case TOKEN_ENTRY_TYPE_NUMBER:
                 fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_NUMBER,
-                   &(union ml_compile_visit_data) { .number = token->data.number });
+                   &(union ml_compile_visit_data) { .number = ctx->num_list.base[token->data.offset] });
                 break;
             case TOKEN_ENTRY_TYPE_ARGUMENT:
                 fn(opaque, ML_COMPILE_VISIT_EVENT_STATEMENT_VISIT_ARG,
