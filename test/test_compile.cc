@@ -17,14 +17,15 @@ namespace runml {
 class Compiler {
 public:
     struct Function {
+        bool ret;
         RawString name;
         const std::vector<RawString> params;
 
-        Function(const char *n, std::vector<RawString> &&p)
-            : name(n), params(std::move(p)) {}
+        Function(bool r, const char *n, std::vector<RawString> &&p)
+            : ret(r), name(n), params(std::move(p)) {}
 
-        Function(const char *n, std::initializer_list<RawString> &&p = {})
-            : Function(n, std::vector<RawString>(p)) {}
+        Function(bool r, const char *n, std::initializer_list<RawString> &&p = {})
+            : Function(r, n, std::vector<RawString>(p)) {}
 
         bool operator==(const Function &rhs) const {
             return name == rhs.name
@@ -59,7 +60,7 @@ private:
                 c->globals.emplace_back(data->name);
                 break;
             case ML_COMPILE_VISIT_EVENT_SUB_FUNC_VISIT_START:
-                c->functions.emplace_back(data->func.name, makeParams(data));
+                c->functions.emplace_back(data->func.ret, data->func.name, makeParams(data));
                 break;
             default:
                 break;
@@ -163,6 +164,7 @@ class TestCompileFunction : public BaseTextFixture {
     CPPUNIT_TEST_SUITE(TestCompileFunction);
     CPPUNIT_TEST(testParamCount);
     CPPUNIT_TEST(testParamName);
+    CPPUNIT_TEST(testReturnType);
     CPPUNIT_TEST(testWrongReturn);
     CPPUNIT_TEST(testFinshBody);
     CPPUNIT_TEST(testEmptyBody);
@@ -180,11 +182,11 @@ public:
             "function aab x y # Hello",
         });
         const std::vector<Compiler::Function> funcs({
-            {"zzzz"},
-            {"z", {"a", "b", "c"}},
-            {"za"},
-            {"bc"},
-            {"aab", {"x", "y"}},
+            {false, "zzzz"},
+            {false, "z", {"a", "b", "c"}},
+            {false, "za"},
+            {false, "bc"},
+            {false, "aab", {"x", "y"}},
         });
 
         Compiler c;
@@ -217,6 +219,25 @@ public:
             const auto res = Compiler().feedLines({signatures[i], "\tvar <- 1", ""});
             CPPUNIT_ASSERT(res == results[i]);
         }
+    }
+
+    void testReturnType() {
+        Compiler c;
+        CPPUNIT_ASSERT(c.feedLines({
+            "function a",
+            "\tzz <- 1",
+            "zzz <- 1",
+            "function b",
+            "\treturn zzz",
+            "# what?",
+            "function c",
+            "\t xxxx <- 2",
+            "\t return xxxx",
+        }) == ML_COMPILE_RESULT_SUCCEED);
+
+        CPPUNIT_ASSERT(!c.getFunctions()[0].ret);
+        CPPUNIT_ASSERT(c.getFunctions()[1].ret);
+        CPPUNIT_ASSERT(c.getFunctions()[2].ret);
     }
 
     void testWrongReturn() {
