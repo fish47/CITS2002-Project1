@@ -1,0 +1,9 @@
+1. Spaces are ignored.
+2. Empty lines are ignored.
+3. Indented comments following the function declaration are allowed.
+4. If a function does not have a return statement, it will return 0 by default.
+5. A number only contains number characters and an optional dot; otherwise, it should fail.
+6. A line may contain at most one tab; otherwise, it should fail.
+7. A function may contain at most one return; otherwise, it should fail.
+8. Argument values like arg0 are read-only; assigning values to them will fail.
+9. Function parameters, global variables, functions cannot share the same name; otherwise, it should fail.
