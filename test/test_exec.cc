@@ -26,6 +26,7 @@ class TestExecution : public BaseTextFixture {
     CPPUNIT_TEST(testNoInputFile);
     CPPUNIT_TEST(testNoneFile);
     CPPUNIT_TEST(testForwardArgs);
+    CPPUNIT_TEST(testCompilerFailure);
     CPPUNIT_TEST_SUITE_END();
 
 private:
@@ -231,6 +232,14 @@ public:
             "print add(arg2024, 1)",
         }));
         CPPUNIT_ASSERT(checkList(stdout_lines, {"7", "16", "20", "1"}));
+    }
+
+    void testCompilerFailure() {
+        CPPUNIT_ASSERT_EQUAL(EXIT_FAILURE, runCode({}, {
+            "print int",
+        }));
+        CPPUNIT_ASSERT(stderr_data.find("failed") != std::string::npos);
+        CPPUNIT_ASSERT(stderr_data.find("compile") != std::string::npos);
     }
 };
 

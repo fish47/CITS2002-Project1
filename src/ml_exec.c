@@ -14,7 +14,8 @@
 
 enum exec_run_flag {
     EXEC_RUN_FLAG_GRAB_STDOUT = 1,
-    EXEC_RUN_FLAG_SEARCH_BIN_PATH = 1 << 1,
+    EXEC_RUN_FLAG_SUPPRESS_STDERR = 1 << 1,
+    EXEC_RUN_FLAG_SEARCH_BIN_PATH = 1 << 2,
 };
 
 static void exec_fn_write_stdout(void *opaque, const char *buf, int n) {
@@ -109,7 +110,8 @@ done:
 }
 
 static bool do_run_subprocess(struct ml_exec_ctx *ctx, uint32_t flags,
-                              const char *bin, char **argv) {
+                              const char *bin, char **argv,
+                              const char *error_msg) {
     int fds[2];
     if ((flags & EXEC_RUN_FLAG_GRAB_STDOUT)) {
         if (pipe(fds) != 0) {
@@ -131,6 +133,9 @@ static bool do_run_subprocess(struct ml_exec_ctx *ctx, uint32_t flags,
             if (!created)
                 goto fail;
         }
+
+        if (flags & EXEC_RUN_FLAG_SUPPRESS_STDERR)
+            close(STDERR_FILENO);
 
         if (flags & EXEC_RUN_FLAG_SEARCH_BIN_PATH)
             execvp(bin, argv);
@@ -160,17 +165,25 @@ fail:
             return false;
         }
 
-        return status == 0;
+        if (status != 0) {
+            ctx->fns->printf_stderr(ctx->opaque, error_msg);
+            return false;
+        }
+
+        return true;
     }
 }
 
 static bool do_exec_compile_file(struct ml_exec_ctx *ctx, char *src, char *exec) {
     char *args[] = {"cc", "-o", exec, src, NULL};
-    return do_run_subprocess(ctx, EXEC_RUN_FLAG_SEARCH_BIN_PATH, "cc", args);
+    uint32_t flags = EXEC_RUN_FLAG_SEARCH_BIN_PATH | EXEC_RUN_FLAG_SUPPRESS_STDERR;
+    return do_run_subprocess(ctx, flags, "cc", args,
+                             "failed to compile ml translation file");
 }
 
 static bool do_exec_run_exec_file(struct ml_exec_ctx *ctx, char *exec, char **argv) {
-    return do_run_subprocess(ctx, EXEC_RUN_FLAG_GRAB_STDOUT, exec, argv);
+    return do_run_subprocess(ctx, EXEC_RUN_FLAG_GRAB_STDOUT, exec, argv,
+                             "failed to run translated executable file");
 }
 
 int ml_exec_run_main(struct ml_exec_ctx *ctx, int argc, char *argv[]) {
