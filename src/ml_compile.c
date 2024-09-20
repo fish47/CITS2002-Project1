@@ -163,11 +163,16 @@ enum parse_expr_flag {
 struct ml_compile_ctx {
     uint32_t compile_flags;
 
+    // pack all symbol into a continuous block of memory
+    // the symbol entries saving offsets are sorted by lexicographic order
     struct ml_list_str symbol_chars;
     struct ml_list_sym symbol_entries;
 
+    // collect values when parsing number tokens
     struct ml_list_double num_list;
 
+    // parameter symbols are stored as indirect offsets
+    // the corresponding visitor code explains the relationship
     struct ml_list_func func_list;
     struct ml_list_int param_offsets;
 
