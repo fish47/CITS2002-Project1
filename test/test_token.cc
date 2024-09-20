@@ -6,7 +6,6 @@ extern "C" {
 
 #include <cstring>
 #include <cstdio>
-#include <initializer_list>
 
 namespace runml {
 
@@ -67,8 +66,8 @@ public:
             values.emplace_back(data.value.number);
             names.emplace_back(data.buf ? data.buf : "");
         }
-        CPPUNIT_ASSERT(values == std::vector<double>({0, 123, 0, 0}));
-        CPPUNIT_ASSERT(names == std::vector<std::string>({"a", "123", "b", ""}));
+        CPPUNIT_ASSERT(checkList(values, {0, 123, 0, 0}));
+        CPPUNIT_ASSERT(checkList(names, {"a", "123", "b", ""}));
     }
 
     void testNullInputData() {

@@ -3,6 +3,8 @@ extern "C" {
 }
 
 #include <cstring>
+#include <vector>
+#include <algorithm>
 #include <initializer_list>
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -16,6 +18,12 @@ public:
 protected:
     void setMaxAllocSize(size_t size);
     void setMaxAllocCount(size_t count);
+
+protected:
+    template <typename T1, typename T2>
+    static bool checkList(const std::vector<T1> list, std::initializer_list<T2> args) {
+        return list.size() == args.size() && std::equal(list.begin(), list.end(), args.begin());
+    }
 };
 
 class RawString {

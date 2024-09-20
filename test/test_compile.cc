@@ -9,8 +9,6 @@ extern "C" {
 #include <vector>
 #include <string>
 #include <random>
-#include <algorithm>
-#include <initializer_list>
 
 namespace runml {
 
@@ -122,7 +120,7 @@ public:
             for (const auto& line : lines)
                 pointers.emplace_back(line.c_str());
             pointers.emplace_back("");
-            CPPUNIT_ASSERT(c.feedLines(std::move(pointers)) == ML_COMPILE_RESULT_SUCCEED);
+            CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, c.feedLines(std::move(pointers)));
 
             globals = c.getGlobalVariables();
             std::sort(globals.begin(), globals.end());
@@ -132,27 +130,27 @@ public:
 
     void testGlobalArgIndexes() {
         Compiler c1;
-        CPPUNIT_ASSERT(c1.feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, c1.feedLines({
             "var <- x + y + arg4",
             "var <- x + y + arg7",
             "function func a b c",
             "\t a <- a + b + c + arg2",
             "var <- func(arg9, arg14, var) + arg47",
-        }) == ML_COMPILE_RESULT_SUCCEED);
-        CPPUNIT_ASSERT(c1.getGlobalArgIndexes() == std::vector<int>({
+        }));
+        CPPUNIT_ASSERT(checkList(c1.getGlobalArgIndexes(), {
             2, 4, 7, 9, 14, 47,
         }));
 
         Compiler c2;
-        CPPUNIT_ASSERT(c2.feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, c2.feedLines({
             "function func a b c",
             "\t  print (a + b) * c + arg0",
             "print arg0",
             "print (1 + 3) / 0.5 * 2 / 8",
             "print func(1, 2, arg47)",
             "print func(arg1, arg2, 4) + func(1, 2, arg3)",
-        }) == ML_COMPILE_RESULT_SUCCEED);
-        CPPUNIT_ASSERT(c2.getGlobalArgIndexes() == std::vector<int>({
+        }));
+        CPPUNIT_ASSERT(checkList(c2.getGlobalArgIndexes(), {
             0, 1, 2, 3, 47,
         }));
     }
@@ -215,15 +213,13 @@ public:
         });
         CPPUNIT_ASSERT(signatures.size() == results.size());
 
-        for (int i = 0, n = signatures.size(); i < n; i++) {
-            const auto res = Compiler().feedLines({signatures[i], "\tvar <- 1", ""});
-            CPPUNIT_ASSERT(res == results[i]);
-        }
+        for (int i = 0, n = signatures.size(); i < n; i++)
+            CPPUNIT_ASSERT_EQUAL(results[i], Compiler().feedLines({signatures[i], "\tvar <- 1", ""}));
     }
 
     void testReturnType() {
         Compiler c;
-        CPPUNIT_ASSERT(c.feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, c.feedLines({
             "function a",
             "\tzz <- 1",
             "zzz <- 1",
@@ -233,7 +229,7 @@ public:
             "function c",
             "\t xxxx <- 2",
             "\t return xxxx",
-        }) == ML_COMPILE_RESULT_SUCCEED);
+        }));
 
         CPPUNIT_ASSERT(!c.getFunctions()[0].ret);
         CPPUNIT_ASSERT(c.getFunctions()[1].ret);
@@ -241,157 +237,157 @@ public:
     }
 
     void testWrongReturn() {
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN, Compiler().feedLines({
             "return bar",
-        }) == ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN, Compiler().feedLines({
             "function foo",
             "\t tmp <- 1",
             "bar <- 1",
             "return bar  # what",
-        }) == ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_RETURN, Compiler().feedLines({
             "function foo",
             "\t tmp <- 1",
             "\t return ok",
             "\t return again",
-        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_RETURN);
+        }));
     }
 
     void testFinshBody() {
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION, Compiler().feedLines({
             "function foo",
             "\t print bar",
             "\t function bar",
-        }) == ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION, Compiler().feedLines({
             "function foo",
             "# comment1",
             "# comment2",
             "\t function bar",
-        }) == ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, Compiler().feedLines({
             "function foo",
             "# comment1",
             "# comment2",
             "\t print bar",
-        }) == ML_COMPILE_RESULT_SUCCEED);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, Compiler().feedLines({
             "function x a b c",
             "\t print a",
             "function y a b c",
             "\t print b",
-        }) == ML_COMPILE_RESULT_SUCCEED);
+        }));
     }
 
     void testEmptyBody() {
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION, Compiler().feedLines({
             "a <- 1",
             "function abc",
             "# comment1",
             "# comment2",
             "a <- haha",
-        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION, Compiler().feedLines({
             "a <- 1",
             "function abc",
-        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION, Compiler().feedLines({
             "a <- 1",
             "function abc",
             "",
-        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION, Compiler().feedLines({
             "a <- 1",
             "function abc",
             "# haha",
             "# haha",
-        }) == ML_COMPILE_RESULT_ERROR_EMPTY_FUNCTION);
+        }));
     }
 
     void testRedundantTab() {
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB, Compiler().feedLines({
             "function abc",
             "# haha",
             "# haha",
             "\t\t  a <- 1",
-        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB, Compiler().feedLines({
             "function abc",
             "\t",
-        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB, Compiler().feedLines({
             "function abc",
             " \t # haha",
-        }) == ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB);
+        }));
     }
 
     void testNameCollision() {
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function var a b c",
             "\t var <- 1",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function abc a abc",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "global <- 1",
             "function global a b c",
             "\t var <- 1",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "global <- 1",
             "function func a b c global",
             "\t var <- 1",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function func a b c",
             "\t func <- 1",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function func a b c",
             "\t var <- a + b + c + func",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "var <- global",
             "function func a b c",
             "\t var <- global  ()  # haha",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function func a b c",
             "\t var <- 1",
             "bar <- func(1, 2, a)",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function x",
             "\t var <- 1",
             "function y",
             "\t var <- x(1, y)",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
 
-        CPPUNIT_ASSERT(Compiler().feedLines({
+        CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function x var",
             "\t var <- 1",
             "print x(1, y, var)",
-        }) == ML_COMPILE_RESULT_ERROR_NAME_COLLISION);
+        }));
     }
 };
 
