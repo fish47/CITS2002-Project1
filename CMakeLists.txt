@@ -7,6 +7,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(RUNML_DIST_LABEL_ID1 "" CACHE STRING "the #1 stduent ID in the combined source code")
+set(RUNML_DIST_LABEL_ID2 "" CACHE STRING "the #2 stduent ID in the combined source code")
+set(RUNML_DIST_LABEL_NAME1 "" CACHE STRING "the #1 stduent name in the combined source code")
+set(RUNML_DIST_LABEL_NAME2 "" CACHE STRING "the #2 stduent name in the combined source code")
+
 find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(_pkg_cppunit
@@ -75,3 +80,12 @@ target_precompile_headers(runml_test
 )
 
 enable_testing()
+
+add_custom_target(runml_dist
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMAND python build.py
+            -o ${CMAKE_CURRENT_BINARY_DIR}/runml.c
+            -i ${runml_src_lib} ${runml_src_main}
+            -l ${RUNML_DIST_LABEL_ID1} ${RUNML_DIST_LABEL_NAME1}
+               ${RUNML_DIST_LABEL_ID2} ${RUNML_DIST_LABEL_NAME2}
+)
