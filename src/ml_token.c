@@ -170,6 +170,7 @@ static enum ml_token_type resolve_name_token(struct ml_token_ctx *ctx) {
 
 static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
                                                struct ml_token_data *data) {
+    errno = 0;
     float value = strtod(ctx->token_buffer, NULL);
     if (errno)
         return ML_TOKEN_TYPE_ERROR;
@@ -187,6 +188,7 @@ static enum ml_token_type resolve_argument_token(struct ml_token_ctx *ctx,
         return ML_TOKEN_TYPE_ERROR;
 
     // parse the argument index
+    errno = 0;
     int num_offset = sizeof(ML_KEYWORD_ARGUMENT) - 1;
     const char *num_str = ctx->token_buffer + num_offset;
     int index = strtoimax(num_str, NULL, 10);
