@@ -25,6 +25,7 @@ set(runml_src_test
     test/main.cc
     test/test_token.cc
     test/test_compile.cc
+    test/test_exec.cc
 )
 
 set(runml_src_lib
