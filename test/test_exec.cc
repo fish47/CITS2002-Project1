@@ -27,6 +27,7 @@ class TestExecution : public BaseTextFixture {
     CPPUNIT_TEST(testNoneFile);
     CPPUNIT_TEST(testForwardArgs);
     CPPUNIT_TEST(testCompilerFailure);
+    CPPUNIT_TEST(testSyntaxError);
     CPPUNIT_TEST_SUITE_END();
 
 private:
@@ -65,13 +66,16 @@ private:
 
     static void writeStderr(void *opaque, const char *fmt, ...) {
         auto t = reinterpret_cast<TestExecution*>(opaque);
-        std::va_list args;
-        va_start(args, fmt);
-        auto n = std::vsnprintf(nullptr, 0, fmt, args);
+        std::va_list args1;
+        std::va_list args2;
+        va_start(args1, fmt);
+        va_copy(args2, args1);
+        auto n = std::vsnprintf(nullptr, 0, fmt, args1);
         std::vector<char> buf(n + 1);
-        std::vsprintf(buf.data(), fmt, args);
+        std::vsprintf(buf.data(), fmt, args2);
         t->stderr_data.append(buf.data(), n);
-        va_end(args);
+        va_end(args1);
+        va_end(args2);
     }
 
     int runCode(std::initializer_list<const char*> params,
@@ -240,6 +244,14 @@ public:
         }));
         CPPUNIT_ASSERT(stderr_data.find("failed") != std::string::npos);
         CPPUNIT_ASSERT(stderr_data.find("compile") != std::string::npos);
+    }
+
+    void testSyntaxError() {
+        CPPUNIT_ASSERT_EQUAL(EXIT_FAILURE, runCode({}, {
+            "print2 haha",
+        }));
+        CPPUNIT_ASSERT(stderr_data.find("! ") == 0);
+        CPPUNIT_ASSERT(stderr_data.find("token") != std::string::npos);
     }
 };
 
