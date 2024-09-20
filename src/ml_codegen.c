@@ -311,10 +311,13 @@ static void do_write_compile_data(void *opaque,
     }
 }
 
-void ml_codegen_export_file(struct ml_compile_ctx *compile, const char *path) {
+bool ml_codegen_export_file(struct ml_compile_ctx *compile, const char *path) {
     FILE *file = fopen(path, "wb");
-    if (file)
-        ml_codegen_export_fns(compile, 0, file, &ml_codegen_io_fns_file);
+    if (!file)
+        return false;
+
+    ml_codegen_export_fns(compile, 0, file, &ml_codegen_io_fns_file);
+    return true;
 }
 
 void ml_codegen_export_fns(struct ml_compile_ctx *compile, int capacity,
