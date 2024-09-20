@@ -171,7 +171,7 @@ static enum ml_token_type resolve_name_token(struct ml_token_ctx *ctx) {
 static enum ml_token_type resolve_number_token(struct ml_token_ctx *ctx,
                                                struct ml_token_data *data) {
     errno = 0;
-    float value = strtod(ctx->token_buffer, NULL);
+    double value = strtod(ctx->token_buffer, NULL);
     if (errno)
         return ML_TOKEN_TYPE_ERROR;
 

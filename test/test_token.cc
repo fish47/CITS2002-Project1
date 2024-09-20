@@ -55,7 +55,7 @@ public:
 
     void testClearInputData() {
         Tokenizer t("a 123 b arg0x");
-        std::vector<float> values;
+        std::vector<double> values;
         std::vector<std::string> names;
         while (true) {
             ml_token_data data {"haha", 4, {123}};
@@ -67,7 +67,7 @@ public:
             values.emplace_back(data.value.number);
             names.emplace_back(data.buf ? data.buf : "");
         }
-        CPPUNIT_ASSERT(values == std::vector<float>({0, 123, 0, 0}));
+        CPPUNIT_ASSERT(values == std::vector<double>({0, 123, 0, 0}));
         CPPUNIT_ASSERT(names == std::vector<std::string>({"a", "123", "b", ""}));
     }
 
