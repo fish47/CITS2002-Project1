@@ -15,4 +15,4 @@ struct ml_exec_ctx {
     void *opaque;
 };
 
-int ml_exec_run_main(struct ml_exec_ctx *ctx, int argc, char *argv[]);
+int ml_exec_run_main(struct ml_exec_ctx *ctx, int argc, const char *argv[]);

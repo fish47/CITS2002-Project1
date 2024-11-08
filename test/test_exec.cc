@@ -109,7 +109,7 @@ private:
             makeTempFilePath,
         };
         ml_exec_ctx ctx { &fns, this };
-        auto ret = ml_exec_run_main(&ctx, argc, const_cast<char**>(argv));
+        auto ret = ml_exec_run_main(&ctx, argc, argv);
 
         if (!stdout_lines.empty() && stdout_lines.back().empty())
             stdout_lines.pop_back();
