@@ -82,7 +82,7 @@ private:
                 std::initializer_list<const char*> lines) {
         // create a source code file
         std::string path = std::tmpnam(nullptr);
-        std::FILE *f = fopen(path.c_str(), "w");
+        std::FILE *f = std::fopen(path.c_str(), "w");
         CPPUNIT_ASSERT(f);
         temp_file_paths.push_back(path);
 
