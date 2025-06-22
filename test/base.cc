@@ -4,6 +4,7 @@ extern "C" {
 
 #include "base.h"
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -21,11 +22,14 @@ public:
     };
 
 private:
+    using MemoryBlock = std::vector<std::uint8_t>;
+
+private:
     LimitMode limit_mode;
     size_t limit_value;
     size_t invoke_count;
     size_t allocate_size;
-    std::unordered_map<void*, std::shared_ptr<std::vector<uint8_t>>> memory_map;
+    std::unordered_map<void*, std::shared_ptr<MemoryBlock>> memory_map;
 
 private:
     bool check(size_t old_size, size_t new_size) {
@@ -67,7 +71,7 @@ public:
         if (!check(0, size))
             return nullptr;
 
-        auto mem = std::make_shared<std::vector<uint8_t>>(size);
+        auto mem = std::make_shared<MemoryBlock>(size);
         memory_map.insert({mem->data(), mem});
         return mem->data();
     }
