@@ -133,7 +133,7 @@ public:
             "var <- x + y + arg4",
             "var <- x + y + arg7",
             "function func a b c",
-            "\t a <- a + b + c + arg2",
+            "	a <- a + b + c + arg2",
             "var <- func(arg9, arg14, var) + arg47",
         }));
         CPPUNIT_ASSERT(checkList(c1.getGlobalArgIndexes(), {
@@ -143,7 +143,7 @@ public:
         Compiler c2;
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, c2.feedLines({
             "function func a b c",
-            "\t  print (a + b) * c + arg0",
+            "	print (a + b) * c + arg0",
             "print arg0",
             "print (1 + 3) / 0.5 * 2 / 8",
             "print func(1, 2, arg47)",
@@ -188,7 +188,7 @@ public:
 
         Compiler c;
         for (const auto &line : signatures)
-            CPPUNIT_ASSERT(c.feedLines({line, "\tvar <- 1", ""}) == ML_COMPILE_RESULT_SUCCEED);
+            CPPUNIT_ASSERT(c.feedLines({line, "	var <- 1", ""}) == ML_COMPILE_RESULT_SUCCEED);
 
         CPPUNIT_ASSERT(c.getFunctions().size() == funcs.size());
         for (int i = 0, n = funcs.size(); i < n; i++)
@@ -213,21 +213,21 @@ public:
         CPPUNIT_ASSERT(signatures.size() == results.size());
 
         for (int i = 0, n = signatures.size(); i < n; i++)
-            CPPUNIT_ASSERT_EQUAL(results[i], Compiler().feedLines({signatures[i], "\tvar <- 1", ""}));
+            CPPUNIT_ASSERT_EQUAL(results[i], Compiler().feedLines({signatures[i], "	var <- 1", ""}));
     }
 
     void testReturnType() {
         Compiler c;
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, c.feedLines({
             "function a",
-            "\tzz <- 1",
+            "	zz <- 1",
             "zzz <- 1",
             "function b",
-            "\treturn zzz",
+            "	return zzz",
             "# what?",
             "function c",
-            "\t xxxx <- 2",
-            "\t return xxxx",
+            "	xxxx <- 2",
+            "	return xxxx",
         }));
 
         CPPUNIT_ASSERT(!c.getFunctions()[0].ret);
@@ -242,45 +242,45 @@ public:
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_RETURN_IN_MAIN, Compiler().feedLines({
             "function foo",
-            "\t tmp <- 1",
+            "	tmp <- 1",
             "bar <- 1",
             "return bar  # what",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_RETURN, Compiler().feedLines({
             "function foo",
-            "\t tmp <- 1",
-            "\t return ok",
-            "\t return again",
+            "	tmp <- 1",
+            "	return ok",
+            "	return again",
         }));
     }
 
     void testFinshBody() {
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION, Compiler().feedLines({
             "function foo",
-            "\t print bar",
-            "\t function bar",
+            "	print bar",
+            "	function bar",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NESTED_FUNCTION, Compiler().feedLines({
             "function foo",
             "# comment1",
             "# comment2",
-            "\t function bar",
+            "	function bar",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, Compiler().feedLines({
             "function foo",
             "# comment1",
             "# comment2",
-            "\t print bar",
+            "	print bar",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_SUCCEED, Compiler().feedLines({
             "function x a b c",
-            "\t print a",
+            "	print a",
             "function y a b c",
-            "\t print b",
+            "	print b",
         }));
     }
 
@@ -317,24 +317,24 @@ public:
             "function abc",
             "# haha",
             "# haha",
-            "\t\t  a <- 1",
+            "		a <- 1",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB, Compiler().feedLines({
             "function abc",
-            "\t",
+            "	",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_REDUNDANT_TAB, Compiler().feedLines({
             "function abc",
-            " \t # haha",
+            "	# haha",
         }));
     }
 
     void testNameCollision() {
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function var a b c",
-            "\t var <- 1",
+            "	var <- 1",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
@@ -344,47 +344,47 @@ public:
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "global <- 1",
             "function global a b c",
-            "\t var <- 1",
+            "	var <- 1",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "global <- 1",
             "function func a b c global",
-            "\t var <- 1",
+            "	var <- 1",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function func a b c",
-            "\t func <- 1",
+            "	func <- 1",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function func a b c",
-            "\t var <- a + b + c + func",
+            "	var <- a + b + c + func",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "var <- global",
             "function func a b c",
-            "\t var <- global  ()  # haha",
+            "	var <- global  ()  # haha",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function func a b c",
-            "\t var <- 1",
+            "	var <- 1",
             "bar <- func(1, 2, a)",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function x",
-            "\t var <- 1",
+            "	var <- 1",
             "function y",
-            "\t var <- x(1, y)",
+            "	var <- x(1, y)",
         }));
 
         CPPUNIT_ASSERT_EQUAL(ML_COMPILE_RESULT_ERROR_NAME_COLLISION, Compiler().feedLines({
             "function x var",
-            "\t var <- 1",
+            "	var <- 1",
             "print x(1, y, var)",
         }));
     }
