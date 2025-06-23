@@ -36,15 +36,32 @@ private:
     std::vector<std::string> temp_file_paths;
 
 private:
-    static bool makeTempFilePath(void *opaque, ml_exec_path path, const char *suffix) {
-        auto t = reinterpret_cast<TestExecution*>(opaque);
-        std::string name = std::tmpnam(nullptr);
-        name.append(suffix);
-        if (name.length() + 1 > sizeof(ml_exec_path))
+    const std::string* doMakeTempFileName(const char *name) {
+        ml_exec_path buf;
+        bool succeed = ml_exec_make_temp_path(buf, "/tmp/", name);
+        if (!succeed)
+            return nullptr;
+
+        // we do not handle creating temporary files with the same name
+        // so the caller should ensure this new file does not exist
+        std::string path(buf);
+        if (std::count(temp_file_paths.cbegin(), temp_file_paths.cend(), path))
+            return nullptr;
+
+        temp_file_paths.emplace_back(std::move(path));
+        return &temp_file_paths.back();
+    }
+
+    static bool makeTempFilePath(void *opaque, ml_exec_path path, const char *name) {
+        if (!path)
             return false;
-        name.copy(path, name.length());
-        path[name.length()] = 0;
-        t->temp_file_paths.emplace_back(std::move(name));
+
+        auto t = reinterpret_cast<TestExecution*>(opaque);
+        const auto *p = t->doMakeTempFileName(name);
+        if (!p)
+            return false;
+
+        std::strcpy(path, p->c_str());
         return true;
     }
 
@@ -81,10 +98,11 @@ private:
     int runCode(std::initializer_list<const char*> params,
                 std::initializer_list<const char*> lines) {
         // create a source code file
-        std::string path = std::tmpnam(nullptr);
-        std::FILE *f = std::fopen(path.c_str(), "w");
+        const auto path = doMakeTempFileName("test.ml");
+        CPPUNIT_ASSERT(path);
+
+        std::FILE *f = std::fopen(path->c_str(), "w");
         CPPUNIT_ASSERT(f);
-        temp_file_paths.push_back(path);
 
         // write lines
         std::for_each(lines.begin(), lines.end(), [&f](const char *s) {
@@ -94,7 +112,7 @@ private:
         std::fclose(f);
 
         // make arguments
-        std::vector<const char*> argv {"?", path.c_str()};
+        std::vector<const char*> argv {"?", path->c_str()};
         std::copy(params.begin(), params.end(), std::back_inserter(argv));
         argv.push_back(nullptr);
 
