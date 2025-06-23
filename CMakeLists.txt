@@ -15,7 +15,7 @@ set(RUNML_DIST_LABEL_NAME2 "" CACHE STRING "the #2 stduent name in the combined 
 find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(_pkg_cppunit
-    REQUIRED IMPORTED_TARGET
+    IMPORTED_TARGET
     cppunit
 )
 
@@ -61,24 +61,28 @@ target_link_libraries(runml_main
     PRIVATE runml_lib
 )
 
-add_executable(runml_test
-    ${runml_src_test}
-)
+if (_pkg_cppunit_FOUND)
 
-target_include_directories(runml_test
-    PRIVATE src
-)
+    add_executable(runml_test
+        ${runml_src_test}
+    )
 
-target_link_libraries(runml_test
-    PRIVATE runml_lib
-    PkgConfig::_pkg_cppunit
-)
+    target_include_directories(runml_test
+        PRIVATE src
+    )
 
-target_precompile_headers(runml_test
-    PRIVATE
-        <algorithm>
-        <cppunit/extensions/HelperMacros.h>
-)
+    target_link_libraries(runml_test
+        PRIVATE runml_lib
+        PkgConfig::_pkg_cppunit
+    )
+
+    target_precompile_headers(runml_test
+        PRIVATE
+            <algorithm>
+            <cppunit/extensions/HelperMacros.h>
+    )
+
+endif()
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/runml.c
