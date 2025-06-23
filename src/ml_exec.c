@@ -29,10 +29,18 @@ static void exec_fn_printf_stderr(void *opaque, const char *fmt, ...) {
     va_end(args);
 }
 
-static bool exec_fn_make_temp_path(void *opaque, ml_exec_path path, const char *suffix) {
-    char buf[50];
-    int n = snprintf(buf, sizeof(buf), "ml_tmp_%d_%s", getpid(), suffix);
-    if (n + 1 > sizeof(buf) || n + 1 > sizeof(ml_exec_path))
+static bool exec_fn_make_temp_path(void *opaque, ml_exec_path path, const char *name) {
+    // leave potential garbage files in the current directory
+    return ml_exec_make_temp_path(path, "", name);
+}
+
+bool ml_exec_make_temp_path(ml_exec_path path, const char *dir, const char *name) {
+    if (!dir)
+        return false;
+
+    ml_exec_path buf;
+    int n = snprintf(buf, sizeof(buf), "%sml_tmp_%d_%s", dir, getpid(), name);
+    if (n + 1 > sizeof(buf))
         return false;
 
     strcpy(path, buf);
