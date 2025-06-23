@@ -80,13 +80,16 @@ target_precompile_headers(runml_test
         <cppunit/extensions/HelperMacros.h>
 )
 
-enable_testing()
-
-add_custom_target(runml_dist
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/runml.c
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND python build.py
             -o ${CMAKE_CURRENT_BINARY_DIR}/runml.c
             -i ${runml_src_lib} ${runml_src_main}
             -l ${RUNML_DIST_LABEL_ID1} ${RUNML_DIST_LABEL_NAME1}
                ${RUNML_DIST_LABEL_ID2} ${RUNML_DIST_LABEL_NAME2}
+)
+
+add_custom_target(runml_dist
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/runml.c
 )
